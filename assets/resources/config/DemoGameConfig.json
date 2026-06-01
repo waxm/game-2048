@@ -1,7 +1,7 @@
 {
-  "duration": 15,
-  "scorePerClick": 1,
-  "targetScore": 30,
-  "coinReward": 10,
-  "popupRecycleDelay": 0.35
+    "duration": 15,
+    "scorePerClick": 1,
+    "targetScore": 30,
+    "coinReward": 10,
+    "popupRecycleDelay": 0.35
 }

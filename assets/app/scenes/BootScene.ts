@@ -14,39 +14,39 @@ const { ccclass } = _decorator;
  */
 @ccclass("BootScene")
 export class BootScene extends SceneBase {
-  /** 当前场景名。 */
-  protected _sceneName = "Boot";
+    /** 当前场景名。 */
+    protected _sceneName = "Boot";
 
-  /** 启动完成后进入的场景名。 */
-  private readonly _nextSceneName = "Lobby";
+    /** 启动完成后进入的场景名。 */
+    private readonly _nextSceneName = "Lobby";
 
-  /**
-   * 场景进入时调用。
-   *
-   * SceneBase 会在 onLoad 中自动调用这里。
-   */
-  protected onEnter(): void {
-    super.onEnter();
+    /**
+     * 场景进入时调用。
+     *
+     * SceneBase 会在 onLoad 中自动调用这里。
+     */
+    protected onEnter(): void {
+        super.onEnter();
 
-    Logger.info("进入启动场景。");
-    this.initFramework();
-    this.enterNextScene();
-  }
+        Logger.info("进入启动场景。");
+        this.initFramework();
+        this.enterNextScene();
+    }
 
-  /**
-   * 初始化框架。
-   *
-   * 第一版先只调用 App.init()，后续资源、配置、存档、音频等模块会继续接到这里。
-   */
-  private initFramework(): void {
-    App.init();
-  }
+    /**
+     * 初始化框架。
+     *
+     * 第一版先只调用 App.init()，后续资源、配置、存档、音频等模块会继续接到这里。
+     */
+    private initFramework(): void {
+        App.init();
+    }
 
-  /**
-   * 进入下一个场景。
-   */
-  private enterNextScene(): void {
-    Logger.info(`启动流程完成，准备进入场景：${this._nextSceneName}`);
-    void SceneManager.load(this._nextSceneName);
-  }
+    /**
+     * 进入下一个场景。
+     */
+    private enterNextScene(): void {
+        Logger.info(`启动流程完成，准备进入场景：${this._nextSceneName}`);
+        SceneManager.load(this._nextSceneName);
+    }
 }

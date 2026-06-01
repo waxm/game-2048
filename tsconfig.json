@@ -1,9 +1,15 @@
 {
-  /* Base configuration. Do not edit this field. */
-  "extends": "./temp/tsconfig.cocos.json",
+    /* Base configuration. Do not edit this field. */
+    "extends": "./temp/tsconfig.cocos.json",
 
-  /* Add your custom configuration here. */
-  "compilerOptions": {
-    "strict": false
-  }
+    /* Add your custom configuration here. */
+    "compilerOptions": {
+        "strict": false,
+
+        /* TypeScript 6 会提示 Cocos 3.8.4 生成的 moduleResolution=node 配置已废弃，这里先忽略该兼容提示。 */
+        "ignoreDeprecations": "6.0",
+
+        /* 跳过引擎声明文件检查，避免 Creator 自带声明和本机 TypeScript 版本差异导致误报。 */
+        "skipLibCheck": true
+    }
 }
