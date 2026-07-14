@@ -2,131 +2,102 @@ import { _decorator, AudioSource, Node, UITransform } from "cc";
 import { AudioManager } from "../core/audio/AudioManager";
 import { StorageManager } from "../core/data/StorageManager";
 import { EventCenter } from "../core/event/EventCenter";
-import { PoolManager } from "../core/pool/PoolManager";
 import { SceneBase } from "../core/scene/SceneBase";
 import { SceneManager } from "../core/scene/SceneManager";
-import { TimerManager } from "../core/timer/TimerManager";
 import { UIManager } from "../core/ui/UIManager";
 import { Logger } from "../core/utils/Logger";
-import { DemoGameController } from "../game/controller/DemoGameController";
+import { PuzzleGameController } from "../game/controller/PuzzleGameController";
 import { GameEvent } from "../game/GameEvent";
 import { UIGamePanel } from "../ui/panels/UIGamePanel";
 
 const { ccclass } = _decorator;
 
-/**
- * 游戏场景模板。
- *
- * 负责启动一局游戏、监听游戏结束和返回大厅事件。
- */
+/** 第 1 关拼图游戏场景。 */
 @ccclass("GameScene")
 export class GameScene extends SceneBase {
     /** 当前场景名。 */
     protected _sceneName = "Game";
 
-    /** 当前 Demo 控制器。 */
-    private _controller: DemoGameController | null = null;
+    /** 第 1 关拼图控制器。 */
+    private _controller: PuzzleGameController | null = null;
 
-    /** 当前场景的 UI 根节点。 */
+    /** 当前场景的 UI 挂载根节点。 */
     private _uiRoot: Node | null = null;
 
-    /**
-     * 场景进入时调用。
-     */
+    /** 进入场景时准备服务并打开拼图面板。 */
     protected onEnter(): void {
         super.onEnter();
-        Logger.info("进入游戏场景。");
+        Logger.info("进入拼图游戏场景。");
         this.prepareFrameworkServices();
-        this.prepareGamePanel();
-        void UIManager.open<UIGamePanel>("UIGamePanel");
-        void this.startGame();
+        this.registerGamePanel();
+        void this.openGamePanel();
     }
 
-    /**
-     * 场景退出时调用。
-     */
+    /** 离开场景时释放本局控制器和 UI。 */
     protected onExit(): void {
-        this.clearDemoRuntime();
+        this.clearRuntime();
         super.onExit();
     }
 
-    /**
-     * 注册游戏场景事件。
-     */
+    /** 注册场景级事件。 */
     protected bindEvents(): void {
-        EventCenter.on(GameEvent.GameOver, this.onGameOver, this);
         EventCenter.on(GameEvent.BackToLobby, this.onBackToLobby, this);
     }
 
-    /**
-     * 注销游戏场景事件。
-     */
+    /** 注销场景级事件。 */
     protected unbindEvents(): void {
-        EventCenter.off(GameEvent.GameOver, this.onGameOver, this);
         EventCenter.off(GameEvent.BackToLobby, this.onBackToLobby, this);
     }
 
-    /**
-     * 启动一局游戏。
-     */
-    private startGame(): void {
-        Logger.info("游戏开始。");
-        this._controller = new DemoGameController();
-        void this._controller.start();
+    /** 注册游戏 Prefab，由 UIManager 统一加载。 */
+    private registerGamePanel(): void {
+        UIManager.setRoot(this.getOrCreateUIRoot());
+        UIManager.register({
+            name: "UIGamePanel",
+            path: "prefabs/game/UIGamePanel",
+            cache: false,
+        });
     }
 
-    /**
-     * 响应游戏结束事件。
-     */
-    private onGameOver = (): void => {
-        Logger.info("游戏结束。");
-    };
+    /** UI 完成加载和事件绑定后再启动控制器，避免丢失初始状态事件。 */
+    private async openGamePanel(): Promise<void> {
+        const panel = await UIManager.open<UIGamePanel>("UIGamePanel");
+        if (!panel) {
+            throw new Error(
+                "UIGamePanel 打开失败，请检查 prefabs/game/UIGamePanel。",
+            );
+        }
 
-    /**
-     * 响应返回大厅事件。
-     */
+        this._controller = new PuzzleGameController();
+        this._controller.start();
+    }
+
+    /** 返回大厅并清理当前拼图运行数据。 */
     private onBackToLobby = (): void => {
-        this.clearDemoRuntime();
+        this.clearRuntime();
         SceneManager.load("Lobby");
     };
 
-    /**
-     * 准备本场景需要用到的框架服务。
-     */
+    /** 准备当前场景使用的音频服务。 */
     private prepareFrameworkServices(): void {
-        const audioSource = this.node.getComponent(AudioSource) ?? this.node.addComponent(AudioSource);
+        const audioSource =
+            this.node.getComponent(AudioSource) ??
+            this.node.addComponent(AudioSource);
         AudioManager.setAudioSource(audioSource);
         AudioManager.setMusicVolume(StorageManager.get("musicVolume", 0.8));
         AudioManager.setEffectVolume(StorageManager.get("effectVolume", 1));
     }
 
-    /**
-     * 准备游戏面板。
-     */
-    private prepareGamePanel(): void {
-        const uiRoot = this.getOrCreateUIRoot();
-        UIManager.setRoot(uiRoot);
-
-        const panelNode = new Node("UIGamePanel");
-        const panel = panelNode.addComponent(UIGamePanel);
-        UIManager.mount("UIGamePanel", panel, {
-            cache: true,
-        });
-    }
-
-    /**
-     * 获取或创建当前场景的 UI 根节点。
-     */
+    /** 获取或创建非业务 UI 的场景挂载根节点。 */
     private getOrCreateUIRoot(): Node {
         if (this._uiRoot?.isValid) {
             return this._uiRoot;
         }
 
-        const existRoot = this.node.getChildByName("UIRoot");
-
-        if (existRoot) {
-            this._uiRoot = existRoot;
-            return existRoot;
+        const existingRoot = this.node.getChildByName("UIRoot");
+        if (existingRoot) {
+            this._uiRoot = existingRoot;
+            return existingRoot;
         }
 
         const uiRoot = new Node("UIRoot");
@@ -136,15 +107,11 @@ export class GameScene extends SceneBase {
         return uiRoot;
     }
 
-    /**
-     * 清理 Demo 运行期资源。
-     */
-    private clearDemoRuntime(): void {
+    /** 清理控制器、UI 和音乐状态；重复调用也保持安全。 */
+    private clearRuntime(): void {
         this._controller?.destroy();
         this._controller = null;
         UIManager.close("UIGamePanel", true);
-        TimerManager.clearAll();
-        PoolManager.clearAll();
         AudioManager.stopMusic();
     }
 }

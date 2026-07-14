@@ -5,7 +5,6 @@ import { SceneManager } from "../core/scene/SceneManager";
 import { UIManager } from "../core/ui/UIManager";
 import { Logger } from "../core/utils/Logger";
 import { GameEvent } from "../game/GameEvent";
-import { UIHomePanel } from "../ui/panels/UIHomePanel";
 
 const { ccclass } = _decorator;
 
@@ -58,15 +57,15 @@ export class LobbyScene extends SceneBase {
     /**
      * 准备首页面板。
      *
-     * Demo 阶段直接用代码创建 UI 节点，再交给 UIManager 管理。
+     * 首页使用 Prefab，由 UIManager 统一加载和管理。
      */
     private prepareHomePanel(): void {
         const uiRoot = this.getOrCreateUIRoot();
         UIManager.setRoot(uiRoot);
 
-        const panelNode = new Node("UIHomePanel");
-        const panel = panelNode.addComponent(UIHomePanel);
-        UIManager.mount("UIHomePanel", panel, {
+        UIManager.register({
+            name: "UIHomePanel",
+            path: "prefabs/home/UIHomePanel",
             cache: true,
         });
     }

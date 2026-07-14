@@ -1,0 +1,101 @@
+{
+  "panelName": "UIHtmlCssPanel",
+  "size": {
+    "width": 640,
+    "height": 1136
+  },
+  "nodes": [
+    {
+      "id": "Node1",
+      "name": "PanelBg",
+      "tag": "img",
+      "type": "image",
+      "x": 0,
+      "y": -0.5,
+      "left": 0,
+      "top": -124,
+      "width": 640,
+      "height": 1385,
+      "text": "",
+      "src": "../../assets/resources/lanhu/upgrade/reference.png",
+      "color": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 255
+      },
+      "fontSize": 24,
+      "bold": false,
+      "opacity": 1
+    },
+    {
+      "id": "Node2",
+      "name": "Title",
+      "tag": "div",
+      "type": "text",
+      "x": 3,
+      "y": 91,
+      "left": 108,
+      "top": 456,
+      "width": 430,
+      "height": 42,
+      "text": "活动升级完成，您继承所得新灵玉为：",
+      "src": "",
+      "color": {
+        "r": 161,
+        "g": 48,
+        "b": 12,
+        "a": 255
+      },
+      "fontSize": 26,
+      "bold": true,
+      "opacity": 1
+    },
+    {
+      "id": "Node3",
+      "name": "Amount",
+      "tag": "div",
+      "type": "text",
+      "x": 55,
+      "y": 15,
+      "left": 300,
+      "top": 526,
+      "width": 150,
+      "height": 54,
+      "text": "6666",
+      "src": "",
+      "color": {
+        "r": 161,
+        "g": 50,
+        "b": 13,
+        "a": 255
+      },
+      "fontSize": 34,
+      "bold": true,
+      "opacity": 1
+    },
+    {
+      "id": "Node4",
+      "name": "Button",
+      "tag": "div",
+      "type": "text",
+      "x": 0,
+      "y": -114,
+      "left": 190,
+      "top": 644,
+      "width": 260,
+      "height": 76,
+      "text": "收下，去喂养",
+      "src": "",
+      "color": {
+        "r": 164,
+        "g": 58,
+        "b": 21,
+        "a": 255
+      },
+      "fontSize": 28,
+      "bold": true,
+      "opacity": 1
+    }
+  ]
+}

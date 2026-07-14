@@ -1,30 +1,39 @@
 /**
  * 游戏事件名。
  *
- * 当前游戏专属事件统一放在这里，避免业务代码到处手写字符串。
+ * 游戏层通过这些统一事件和 UI、场景通信，避免散落的字符串事件名。
  */
 export enum GameEvent {
     /** 游戏开始。 */
     GameStart = "GameStart",
 
-    /** 点击得分 Demo 中点击屏幕。 */
+    /** 旧点击得分 Demo 中点击屏幕。保留它以兼容历史示例代码。 */
     DemoClick = "DemoClick",
 
-    /** 分数变化。 */
+    /** 旧点击得分 Demo 的分数变化。保留它以兼容历史示例代码。 */
     ScoreChanged = "ScoreChanged",
 
-    /** 剩余时间变化。 */
+    /** 旧点击得分 Demo 的倒计时变化。保留它以兼容历史示例代码。 */
     TimeChanged = "TimeChanged",
 
-    /** 游戏结束。 */
+    /** 旧点击得分 Demo 的游戏结束事件。保留它以兼容历史示例代码。 */
     GameOver = "GameOver",
+
+    /** 拼图组合发生正确吸附后，请求控制器记录已连接拼图。 */
+    PuzzlePieceDropRequest = "PuzzlePieceDropRequest",
+
+    /** 控制器返回拼图块落点判定结果。 */
+    PuzzlePieceDropped = "PuzzlePieceDropped",
+
+    /** 拼图状态变化。 */
+    PuzzleStateChanged = "PuzzleStateChanged",
+
+    /** 第 1 关完成。 */
+    PuzzleCompleted = "PuzzleCompleted",
+
+    /** 请求重新开始本关。 */
+    PuzzleRestart = "PuzzleRestart",
 
     /** 返回大厅。 */
     BackToLobby = "BackToLobby",
-
-    /** 金币数量变化。 */
-    CoinChanged = "CoinChanged",
-
-    /** 关卡通过。 */
-    LevelPassed = "LevelPassed",
 }

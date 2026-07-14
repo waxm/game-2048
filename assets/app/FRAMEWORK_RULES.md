@@ -31,6 +31,34 @@ assets/
   resources/           # 少量全局动态加载资源
 ```
 
+## Prefab 目录规范
+
+所有动态加载的 Prefab 统一放在 `assets/resources/prefabs`，并按用途分类：
+
+```text
+assets/resources/prefabs/
+  common/               # 通用组件，例如通用按钮、通用弹窗、加载界面
+  home/                 # 首页和大厅 UI，例如 UIHomePanel
+  game/                 # 游戏内 UI 和玩法对象，例如 UIGamePanel、PuzzlePiece
+  popup/                # 独立弹窗，例如设置、通关、失败弹窗
+  item/                 # 列表项和可复用小组件
+  lanhu/                # 蓝湖转换工具生成的 Prefab
+```
+
+- 不要把新增 Prefab 直接放在 `assets/resources/prefabs` 根目录。
+- 加载路径必须包含模块目录，例如首页 Prefab 使用 `prefabs/home/UIHomePanel`。
+- 蓝湖转换生成的 Prefab 统一使用 `prefabs/lanhu/` 路径，避免与手工制作的业务 Prefab 混放。
+
+## Prefab 节点绑定与校验
+
+Prefab 驱动的 UI 必须让 Prefab 成为唯一的节点结构来源：
+
+- 不在 UI 脚本中用 `new Node()` 创建界面节点。
+- 不使用递归、`getChildByName()`、`find()` 等运行时节点查找作为兜底。
+- 所有需要读取或修改的 UI 节点，使用 `@property` 暴露并在 Inspector 中绑定。
+- 在 `onLoad()` 调用 `UIBase.assertRequiredBindings()`；任何缺失引用都会直接抛出错误，便于第一时间定位 Prefab 配置问题。
+- 不为缺失绑定创建替代节点，也不静默跳过按钮、列表或文本刷新逻辑。
+
 ## 命名规范
 
 - 类名使用 `PascalCase`。
@@ -153,6 +181,8 @@ assets/scene/Game.scene        # 挂 GameScene
 ## 注释规则
 
 - 核心框架代码必须写中文注释。
-- 类、重要属性、公开方法都要说明用途。
-- 复杂逻辑前要补一行简短说明。
+- 类、接口、枚举、成员变量、常量、公开方法和生命周期方法都要说明用途。
+- 私有函数只要包含状态判断、事件通信、资源释放、坐标换算、数据转换、循环构建或其他非直观逻辑，也要说明用途。
+- 复杂逻辑块前要说明“为什么这样做”，例如吸附阈值、缓存策略、状态变更顺序。
+- 新增或修改代码时，要同步补齐受影响变量、函数和复杂逻辑的注释。
 - 不写没有意义的逐行翻译式注释。

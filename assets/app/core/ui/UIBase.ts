@@ -26,6 +26,26 @@ export class UIBase extends Component {
     }
 
     /**
+     * 校验 Prefab 中的必填节点引用。
+     *
+     * Prefab 驱动的 UI 必须在 Inspector 中显式绑定节点；缺失时立即报错，
+     * 不允许通过运行时查找节点来掩盖配置问题。
+     */
+    protected assertRequiredBindings(bindings: Record<string, unknown>): void {
+        const missingNames: string[] = [];
+
+        for (const name in bindings) {
+            if (bindings[name] === null || bindings[name] === undefined) {
+                missingNames.push(name);
+            }
+        }
+
+        if (missingNames.length > 0) {
+            throw new Error(`UI Prefab 节点未绑定：${this.node.name}.${missingNames.join("、")}`);
+        }
+    }
+
+    /**
      * 打开 UI。
      *
      * UIManager 后续会统一调用这个方法，而不是直接操作节点 active。

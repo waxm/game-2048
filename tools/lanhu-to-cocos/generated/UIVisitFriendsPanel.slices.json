@@ -1,0 +1,373 @@
+{
+  "panelName": "UIVisitFriendsPanel",
+  "slug": "visit-friends",
+  "designName": "串门-好友",
+  "canvasSize": {
+    "width": 207,
+    "height": 448
+  },
+  "rawCanvas": {
+    "width": 828,
+    "height": 1806
+  },
+  "projectSize": {
+    "width": 640,
+    "height": 1136
+  },
+  "scale": 0.7729468599033816,
+  "contentHeight": 1395.94,
+  "options": {
+    "visitFriendsDialog": true
+  },
+  "nodes": [
+    {
+      "id": "1599:3548",
+      "name": "PanelBg",
+      "type": "image",
+      "sourceName": "Group 1312332050",
+      "layerPath": "Group 1312332050",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNG671e2a964fad086407e690875a1b05dd.png",
+      "assetPath": "assets/resources/lanhu/visit-friends/slices/panel-bg.png",
+      "x": 0,
+      "y": -275.17,
+      "width": 640,
+      "height": 845.6,
+      "button": false,
+      "sourcePosition": {
+        "x": 0,
+        "y": 712
+      },
+      "sourceSize": {
+        "width": 828,
+        "height": 1094
+      },
+      "opacity": 1,
+      "binding": false,
+      "bindingReason": "fixed-ui-background"
+    },
+    {
+      "id": "1599:3546",
+      "name": "TabActiveMark",
+      "type": "image",
+      "sourceName": "Group 1312332049",
+      "layerPath": "Group 1312332049",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNGbf2276f5aa120d395fea50a61f4763bd.png",
+      "assetPath": "assets/resources/lanhu/visit-friends/slices/tab-active-mark.png",
+      "x": 0,
+      "y": 85.02,
+      "width": 333.91,
+      "height": 24.73,
+      "button": false,
+      "sourcePosition": {
+        "x": 198,
+        "y": 777
+      },
+      "sourceSize": {
+        "width": 432,
+        "height": 32
+      },
+      "opacity": 1,
+      "binding": false,
+      "bindingReason": "fixed-ui-background"
+    },
+    {
+      "id": "2362:14593",
+      "name": "VisitorRedDot",
+      "type": "image",
+      "sourceName": "Ellipse 1428",
+      "layerPath": "Ellipse 1428",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNGc7ba40256cbf6c49a403cc566cb3d46d.png",
+      "assetPath": "assets/resources/lanhu/visit-friends/slices/visitor-red-dot.png",
+      "x": 174.69,
+      "y": 97.39,
+      "width": 12.37,
+      "height": 12.37,
+      "button": false,
+      "sourcePosition": {
+        "x": 632,
+        "y": 769
+      },
+      "sourceSize": {
+        "width": 16,
+        "height": 16
+      },
+      "opacity": 1,
+      "binding": false,
+      "bindingReason": "static-image-default"
+    },
+    {
+      "id": "1605:7662",
+      "name": "CloseBtn",
+      "type": "image",
+      "sourceName": "关闭",
+      "layerPath": "关闭",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNG0c99d475ad70e2e07a0e065c40b8c8e4.png",
+      "assetPath": "assets/resources/lanhu/visit-friends/slices/close-btn.png",
+      "x": 291.01,
+      "y": 119.42,
+      "width": 45.6,
+      "height": 45.6,
+      "button": true,
+      "sourcePosition": {
+        "x": 761,
+        "y": 719
+      },
+      "sourceSize": {
+        "width": 59,
+        "height": 59
+      },
+      "opacity": 1,
+      "binding": false,
+      "bindingReason": "fixed-close-icon"
+    },
+    {
+      "name": "SearchInputBg",
+      "type": "generated-image",
+      "assetPath": "assets/resources/lanhu/visit-friends/slices/search-input-bg.png",
+      "x": 0,
+      "y": 13.91,
+      "width": 525.6,
+      "height": 55.65,
+      "sourcePosition": {
+        "x": 74,
+        "y": 849
+      },
+      "sourceSize": {
+        "width": 680,
+        "height": 72
+      },
+      "shape": {
+        "fill": {
+          "r": 231,
+          "g": 247,
+          "b": 247,
+          "a": 255
+        },
+        "radius": 36
+      },
+      "binding": false,
+      "bindingReason": "generated-static-shape"
+    },
+    {
+      "id": "1602:3572",
+      "name": "SearchBtn",
+      "type": "image",
+      "sourceName": "Rectangle 36",
+      "layerPath": "Rectangle 36",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNG993735716943bf0c24325189a85fe7a0.png",
+      "assetPath": "assets/resources/lanhu/visit-friends/slices/search-btn.png",
+      "x": 203.29,
+      "y": 13.91,
+      "width": 109.76,
+      "height": 46.38,
+      "button": true,
+      "sourcePosition": {
+        "x": 606,
+        "y": 855
+      },
+      "sourceSize": {
+        "width": 142,
+        "height": 60
+      },
+      "opacity": 1,
+      "binding": false,
+      "bindingReason": "fixed-button-background"
+    },
+    {
+      "name": "FriendTabLabel",
+      "type": "text",
+      "text": "好友",
+      "x": -142.22,
+      "y": 90.43,
+      "width": 49.47,
+      "height": 24.73,
+      "fontSize": 25,
+      "lineHeight": 30,
+      "color": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 255
+      },
+      "binding": false,
+      "bindingReason": "fixed-ui-copy"
+    },
+    {
+      "name": "MasterTabLabel",
+      "type": "text",
+      "text": "大神",
+      "x": 0,
+      "y": 90.43,
+      "width": 49.47,
+      "height": 24.73,
+      "fontSize": 25,
+      "lineHeight": 30,
+      "color": {
+        "r": 31,
+        "g": 127,
+        "b": 129,
+        "a": 255
+      },
+      "binding": false,
+      "bindingReason": "fixed-ui-copy"
+    },
+    {
+      "name": "VisitorTabLabel",
+      "type": "text",
+      "text": "访客",
+      "x": 142.22,
+      "y": 90.43,
+      "width": 49.47,
+      "height": 24.73,
+      "fontSize": 25,
+      "lineHeight": 30,
+      "color": {
+        "r": 31,
+        "g": 127,
+        "b": 129,
+        "a": 255
+      },
+      "binding": false,
+      "bindingReason": "fixed-ui-copy"
+    },
+    {
+      "name": "SearchPlaceholder",
+      "type": "text",
+      "text": "输入房间号",
+      "x": -183.96,
+      "y": 13.91,
+      "width": 108.21,
+      "height": 18.55,
+      "fontSize": 22,
+      "lineHeight": 26,
+      "color": {
+        "r": 0,
+        "g": 0,
+        "b": 0,
+        "a": 102
+      },
+      "binding": true,
+      "bindingReason": "input-or-placeholder",
+      "horizontalAlign": 0
+    },
+    {
+      "name": "SearchLabel",
+      "type": "text",
+      "parent": "SearchBtn",
+      "text": "搜索",
+      "binding": false,
+      "bindingReason": "button-label-fixed",
+      "x": 0,
+      "y": 0,
+      "width": 43.29,
+      "height": 18.55,
+      "fontSize": 22,
+      "lineHeight": 26,
+      "color": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 255
+      }
+    },
+    {
+      "name": "FriendScrollView",
+      "type": "scroll-view",
+      "content": "Content",
+      "x": 0,
+      "y": -281.35,
+      "width": 562.71,
+      "height": 460.68
+    },
+    {
+      "name": "View",
+      "type": "mask",
+      "parent": "FriendScrollView",
+      "x": 0,
+      "y": 0,
+      "width": 562.71,
+      "height": 460.68
+    },
+    {
+      "name": "Content",
+      "type": "layout",
+      "parent": "View",
+      "x": 0,
+      "y": 0,
+      "width": 562.71,
+      "height": 618.36,
+      "cellWidth": 562.71,
+      "cellHeight": 77.29,
+      "spacingY": 46.38
+    },
+    {
+      "id": "1602:3777",
+      "name": "AnonymousCheck",
+      "type": "image",
+      "sourceName": "Group 1312331886",
+      "layerPath": "Group 1312332058/Group 1312331886",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNGe515c651638fc91e1c4d3608568eaafa.png",
+      "assetPath": "assets/resources/lanhu/visit-friends/slices/anonymous-check.png",
+      "x": -57.2,
+      "y": -643.86,
+      "width": 24.73,
+      "height": 24.73,
+      "button": false,
+      "sourcePosition": {
+        "x": 324,
+        "y": 1720
+      },
+      "sourceSize": {
+        "width": 32,
+        "height": 32
+      },
+      "opacity": 1,
+      "binding": false,
+      "bindingReason": "static-image-default"
+    },
+    {
+      "id": "1602:3774",
+      "name": "AnonymousIcon",
+      "type": "image",
+      "sourceName": "Frame",
+      "layerPath": "Group 1312332058/Frame",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNG4bd4cb21b0ea509b564314a9c953dfdb.png",
+      "assetPath": "assets/resources/lanhu/visit-friends/slices/anonymous-icon.png",
+      "x": 58.74,
+      "y": -643.86,
+      "width": 30.92,
+      "height": 30.92,
+      "button": false,
+      "sourcePosition": {
+        "x": 470,
+        "y": 1716
+      },
+      "sourceSize": {
+        "width": 40,
+        "height": 40
+      },
+      "opacity": 1,
+      "binding": true,
+      "bindingReason": "runtime-item-or-status-icon"
+    },
+    {
+      "name": "AnonymousLabel",
+      "type": "text",
+      "text": "匿名访问",
+      "x": 3.09,
+      "y": -646.96,
+      "width": 74.2,
+      "height": 21.64,
+      "fontSize": 19,
+      "lineHeight": 22,
+      "color": {
+        "r": 119,
+        "g": 99,
+        "b": 34,
+        "a": 255
+      },
+      "binding": false,
+      "bindingReason": "fixed-ui-copy"
+    }
+  ]
+}

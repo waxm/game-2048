@@ -1,0 +1,101 @@
+{
+  "panelName": "UIRenameConfirmPanel",
+  "size": {
+    "width": 640,
+    "height": 1136
+  },
+  "nodes": [
+    {
+      "id": "Node1",
+      "name": "Title",
+      "tag": "div",
+      "type": "text",
+      "x": 0,
+      "y": 120,
+      "left": 220,
+      "top": 426,
+      "width": 200,
+      "height": 44,
+      "text": "改名确认",
+      "src": "",
+      "color": {
+        "r": 125,
+        "g": 58,
+        "b": 18,
+        "a": 255
+      },
+      "fontSize": 32,
+      "bold": true,
+      "opacity": 1
+    },
+    {
+      "id": "Node2",
+      "name": "Message",
+      "tag": "div",
+      "type": "text",
+      "x": 0,
+      "y": 37,
+      "left": 170,
+      "top": 512,
+      "width": 300,
+      "height": 38,
+      "text": "是否确认修改昵称？",
+      "src": "",
+      "color": {
+        "r": 121,
+        "g": 56,
+        "b": 23,
+        "a": 255
+      },
+      "fontSize": 26,
+      "bold": false,
+      "opacity": 1
+    },
+    {
+      "id": "Node3",
+      "name": "Cancel",
+      "tag": "div",
+      "type": "text",
+      "x": -99,
+      "y": -73,
+      "left": 142,
+      "top": 610,
+      "width": 158,
+      "height": 62,
+      "text": "取消",
+      "src": "",
+      "color": {
+        "r": 139,
+        "g": 90,
+        "b": 49,
+        "a": 255
+      },
+      "fontSize": 28,
+      "bold": true,
+      "opacity": 1
+    },
+    {
+      "id": "Node4",
+      "name": "Confirm",
+      "tag": "div",
+      "type": "text",
+      "x": 99,
+      "y": -73,
+      "left": 340,
+      "top": 610,
+      "width": 158,
+      "height": 62,
+      "text": "确认",
+      "src": "",
+      "color": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 255
+      },
+      "fontSize": 28,
+      "bold": true,
+      "opacity": 1
+    }
+  ]
+}

@@ -1,0 +1,203 @@
+{
+  "panelName": "UIRenameConfirmPanel",
+  "slug": "rename-confirm",
+  "designName": "改名卡确认",
+  "canvasSize": {
+    "width": 207,
+    "height": 448
+  },
+  "rawCanvas": {
+    "width": 828,
+    "height": 1792
+  },
+  "projectSize": {
+    "width": 640,
+    "height": 1136
+  },
+  "scale": 0.7729468599033816,
+  "contentHeight": 1385.12,
+  "options": {
+    "dialogOnly": true,
+    "fillText": true
+  },
+  "nodes": [
+    {
+      "id": "1666:10049",
+      "name": "DialogBg",
+      "type": "image",
+      "sourceName": "Rectangle 57768",
+      "layerPath": "Rectangle 57768",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNGb16f20e3faf927491a8e12a37d201def.png",
+      "assetPath": "assets/resources/lanhu/rename-confirm/slices/dialog-bg.png",
+      "x": 0,
+      "y": -118.26,
+      "width": 432.85,
+      "height": 262.8,
+      "button": false,
+      "sourcePosition": {
+        "x": 134,
+        "y": 879
+      },
+      "sourceSize": {
+        "width": 560,
+        "height": 340
+      },
+      "opacity": 1,
+      "binding": false,
+      "bindingReason": "fixed-ui-background"
+    },
+    {
+      "id": "1666:10051",
+      "name": "CloseBtn",
+      "type": "image",
+      "sourceName": "六间房/基础/icon/黑色/关闭",
+      "layerPath": "六间房/基础/icon/黑色/关闭",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNGb538c39b8038db34e6986edf93c21cb1.png",
+      "assetPath": "assets/resources/lanhu/rename-confirm/slices/close-btn.png",
+      "x": 185.51,
+      "y": -17.78,
+      "width": 30.92,
+      "height": 30.92,
+      "button": true,
+      "sourcePosition": {
+        "x": 634,
+        "y": 899
+      },
+      "sourceSize": {
+        "width": 40,
+        "height": 40
+      },
+      "opacity": 1,
+      "binding": false,
+      "bindingReason": "fixed-close-icon"
+    },
+    {
+      "id": "1666:10058",
+      "name": "CancelBtn",
+      "type": "image",
+      "sourceName": "Rectangle 57769",
+      "layerPath": "Group 1312332067/Rectangle 57769",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNGaaa57625671d0a6822b583dd5dec63ce.png",
+      "assetPath": "assets/resources/lanhu/rename-confirm/slices/cancel-btn.png",
+      "x": -98.94,
+      "y": -181.64,
+      "width": 173.14,
+      "height": 61.84,
+      "button": true,
+      "sourcePosition": {
+        "x": 174,
+        "y": 1091
+      },
+      "sourceSize": {
+        "width": 224,
+        "height": 80
+      },
+      "opacity": 1,
+      "binding": false,
+      "bindingReason": "fixed-button-background"
+    },
+    {
+      "id": "1666:10061",
+      "name": "ConfirmBtn",
+      "type": "image",
+      "sourceName": "Rectangle 57771",
+      "layerPath": "Group 1312332068/Rectangle 57771",
+      "downloadUrl": "https://lanhu-oss-2537-2.lanhuapp.com/FigmaSlicePNGd1776cb6a9e00627a6d2d7f328cf71d0.png",
+      "assetPath": "assets/resources/lanhu/rename-confirm/slices/confirm-btn.png",
+      "x": 98.94,
+      "y": -181.64,
+      "width": 173.14,
+      "height": 61.84,
+      "button": true,
+      "sourcePosition": {
+        "x": 430,
+        "y": 1091
+      },
+      "sourceSize": {
+        "width": 224,
+        "height": 80
+      },
+      "opacity": 1,
+      "binding": false,
+      "bindingReason": "fixed-button-background"
+    },
+    {
+      "name": "MessageLabel",
+      "type": "text",
+      "text": "消耗1张改名卡/50灵玉，修改昵称为：",
+      "x": 0,
+      "y": -57.97,
+      "width": 320,
+      "height": 37.1,
+      "fontSize": 22,
+      "lineHeight": 26,
+      "color": {
+        "r": 0,
+        "g": 0,
+        "b": 0,
+        "a": 255
+      },
+      "binding": true,
+      "bindingReason": "runtime-name"
+    },
+    {
+      "name": "NameLabel",
+      "type": "text",
+      "text": "宠物昵称",
+      "x": 0,
+      "y": -95.07,
+      "width": 320,
+      "height": 37.1,
+      "fontSize": 22,
+      "lineHeight": 26,
+      "color": {
+        "r": 40,
+        "g": 152,
+        "b": 140,
+        "a": 255
+      },
+      "binding": true,
+      "bindingReason": "runtime-name"
+    },
+    {
+      "name": "CancelLabel",
+      "type": "text",
+      "parent": "CancelBtn",
+      "text": "取消",
+      "binding": false,
+      "bindingReason": "button-label-fixed",
+      "x": 0,
+      "y": 0,
+      "width": 49.47,
+      "height": 34.78,
+      "fontSize": 25,
+      "lineHeight": 30,
+      "color": {
+        "r": 40,
+        "g": 152,
+        "b": 140,
+        "a": 255
+      }
+    },
+    {
+      "name": "ConfirmLabel",
+      "type": "text",
+      "parent": "ConfirmBtn",
+      "text": "确认",
+      "binding": false,
+      "bindingReason": "button-label-fixed",
+      "x": 0,
+      "y": 0,
+      "width": 49.47,
+      "height": 34.78,
+      "fontSize": 25,
+      "lineHeight": 30,
+      "color": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 255
+      }
+    }
+  ]
+}

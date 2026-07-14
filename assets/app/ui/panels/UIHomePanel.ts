@@ -1,84 +1,78 @@
-import { _decorator, Color, Label, Node, UITransform, Vec3 } from "cc";
+import { _decorator, Button, Label } from "cc";
 import { EventCenter } from "../../core/event/EventCenter";
 import { UIBase } from "../../core/ui/UIBase";
 import { Logger } from "../../core/utils/Logger";
 import { GameEvent } from "../../game/GameEvent";
 
-const { ccclass } = _decorator;
+const { ccclass, property } = _decorator;
 
 /**
- * 首页面板模板。
+ * 首页面板。
  *
- * 后续真正制作 UIHomePanel.prefab 时，把这个脚本挂到面板根节点上。
+ * 界面节点由 UIHomePanel.prefab 提供，脚本只负责绑定按钮和派发开始游戏事件。
  */
 @ccclass("UIHomePanel")
 export class UIHomePanel extends UIBase {
-    /** 当前是否已经构建过界面。 */
-    private _viewBuilt = false;
+    /** 首页标题。 */
+    @property({ type: Label })
+    public titleLabel: Label | null = null;
 
-    /**
-     * UI 打开时调用。
-     *
-     * 这里适合刷新首页数据，例如金币、体力、关卡进度。
-     */
+    /** 开始第 1 关按钮。 */
+    @property({ type: Button })
+    public startButton: Button | null = null;
+
+    /** 首页玩法提示。 */
+    @property({ type: Label })
+    public tipLabel: Label | null = null;
+
+    /** 是否已经注册按钮事件。 */
+    private _eventsBound = false;
+
+    /** 节点加载时调用。 */
+    protected onLoad(): void {
+        this.assertRequiredBindings({
+            titleLabel: this.titleLabel,
+            startButton: this.startButton,
+            tipLabel: this.tipLabel,
+        });
+        this.bindEvents();
+    }
+
+    /** UI 打开时调用。 */
     protected onOpen(params?: unknown): void {
         super.onOpen(params);
-        this.buildView();
-        this.node.on(Node.EventType.TOUCH_END, this.onClickStart, this);
+        this.bindEvents();
         Logger.info("打开首页面板。", params);
     }
 
-    /**
-     * UI 关闭时调用。
-     *
-     * 这里适合注销按钮外的临时监听、停止动画等。
-     */
+    /** UI 关闭时调用。 */
     protected onClose(): void {
-        this.node.off(Node.EventType.TOUCH_END, this.onClickStart, this);
+        this.unbindEvents();
         Logger.info("关闭首页面板。");
         super.onClose();
     }
 
-    /**
-     * 构建首页基础界面。
-     *
-     * Demo 阶段先用代码生成文本，后续可以替换成正式 Prefab。
-     */
-    private buildView(): void {
-        if (this._viewBuilt) {
+    /** 注册首页按钮事件。 */
+    private bindEvents(): void {
+        if (this._eventsBound) {
             return;
         }
 
-        this._viewBuilt = true;
-        this.node.name = "UIHomePanel";
-        this.node.addComponent(UITransform).setContentSize(640, 1136);
-        this.createLabel("TitleLabel", "Work AI Demo", 0, 160, 48, Color.WHITE);
-        this.createLabel("StartLabel", "点击屏幕开始游戏", 0, 40, 34, new Color(255, 230, 120));
-        this.createLabel("TipLabel", "限时点击得分，达标获得金币", 0, -40, 26, new Color(180, 220, 255));
+        this._eventsBound = true;
+        this.startButton?.node.on(Button.EventType.CLICK, this.onClickStart, this);
     }
 
-    /**
-     * 创建一个文本节点。
-     */
-    private createLabel(name: string, text: string, x: number, y: number, fontSize: number, color: Color): Label {
-        const node = new Node(name);
-        node.setPosition(new Vec3(x, y, 0));
-        this.node.addChild(node);
+    /** 注销首页按钮事件。 */
+    private unbindEvents(): void {
+        if (!this._eventsBound) {
+            return;
+        }
 
-        const label = node.addComponent(Label);
-        label.string = text;
-        label.fontSize = fontSize;
-        label.lineHeight = fontSize + 8;
-        label.color = color;
-
-        return label;
+        this._eventsBound = false;
+        this.startButton?.node.off(Button.EventType.CLICK, this.onClickStart, this);
     }
 
-    /**
-     * 点击开始按钮。
-     *
-     * 在 Creator 里可以把按钮点击事件绑定到这个方法。
-     */
+    /** 点击开始按钮后进入拼图第 1 关。 */
     public onClickStart(): void {
         EventCenter.emit(GameEvent.GameStart);
     }
