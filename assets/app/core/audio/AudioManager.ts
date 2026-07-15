@@ -31,6 +31,12 @@ export class AudioManager {
     /** 当前背景音乐路径。 */
     private static _currentMusicPath = "";
 
+    /** 音乐异步加载请求编号，用于阻止停止或重置后的旧请求继续播放。 */
+    private static _musicRequestId = 0;
+
+    /** 音频管理器生命周期编号，用于让重置前加载中的音效失效。 */
+    private static _lifecycleId = 0;
+
     /**
      * 初始化音频管理器。
      *
@@ -66,9 +72,15 @@ export class AudioManager {
             return;
         }
 
+        const requestId = ++this._musicRequestId;
         const clip = await ResManager.load(path, AudioClip, {
             bundleName: options.bundleName,
         });
+
+        // 加载期间可能已经停止音乐、重置框架或更换 AudioSource，旧结果必须丢弃。
+        if (requestId !== this._musicRequestId || source !== this._audioSource || !source.isValid) {
+            return;
+        }
 
         this._currentMusicPath = path;
         this._musicVolume = options.volume ?? this._musicVolume;
@@ -82,6 +94,7 @@ export class AudioManager {
      * 停止背景音乐。
      */
     public static stopMusic(): void {
+        this._musicRequestId += 1;
         const source = this.getAudioSource();
 
         if (!source) {
@@ -90,6 +103,25 @@ export class AudioManager {
 
         source.stop();
         source.clip = null;
+        this._currentMusicPath = "";
+    }
+
+    /**
+     * 重置音频运行状态并解除场景 AudioSource 引用。
+     *
+     * 音量会恢复默认值，但不会修改 StorageManager 中的用户设置。
+     */
+    public static reset(): void {
+        this._musicRequestId += 1;
+        this._lifecycleId += 1;
+        const source = this._audioSource;
+        if (source?.isValid) {
+            source.stop();
+            source.clip = null;
+        }
+        this._audioSource = null;
+        this._musicVolume = 1;
+        this._effectVolume = 1;
         this._currentMusicPath = "";
     }
 
@@ -119,9 +151,14 @@ export class AudioManager {
             return;
         }
 
+        const lifecycleId = this._lifecycleId;
         const clip = await ResManager.load(path, AudioClip, {
             bundleName: options.bundleName,
         });
+
+        if (lifecycleId !== this._lifecycleId || source !== this._audioSource || !source.isValid) {
+            return;
+        }
 
         const volume = options.volume ?? this._effectVolume;
         source.playOneShot(clip, volume);

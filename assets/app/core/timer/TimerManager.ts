@@ -90,6 +90,8 @@ export class TimerManager {
         for (const id of ids) {
             this.clear(id);
         }
+
+        this._nextId = 1;
     }
 
     /**

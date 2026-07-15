@@ -1,7 +1,19 @@
 {
     "name": "Work_AI",
     "uuid": "f5d9ee51-9d70-46ec-a31c-05b425aee493",
+    "scripts": {
+        "typecheck": "tsc --noEmit",
+        "generate:levels": "node tools/generate-puzzle-level-configs.mjs",
+        "fix:level-imports": "node tools/generate-puzzle-level-configs.mjs --fix-import-settings",
+        "validate:levels": "node tools/generate-puzzle-level-configs.mjs --check",
+        "configure:scenes": "node tools/configure-scene-bindings.mjs",
+        "validate:cocos": "node tools/validate-cocos-assets.mjs",
+        "verify": "npm run typecheck && npm run validate:levels && npm run validate:cocos"
+    },
     "creator": {
         "version": "3.8.4"
+    },
+    "devDependencies": {
+        "typescript": "5.6.3"
     }
 }

@@ -260,6 +260,9 @@
     "_children": [
       {
         "__id__": 8
+      },
+      {
+        "__id__": 23
       }
     ],
     "_active": true,
@@ -275,6 +278,9 @@
       },
       {
         "__id__": 13
+      },
+      {
+        "__id__": 25
       }
     ],
     "_prefab": null,
@@ -476,7 +482,13 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "_id": "b2UHWp60FK+41+uLRZhwMj"
+    "_id": "b2UHWp60FK+41+uLRZhwMj",
+    "uiRoot": {
+      "__id__": 23
+    },
+    "audioSource": {
+      "__id__": 25
+    }
   },
   {
     "__type__": "cc.SceneGlobals",
@@ -662,5 +674,88 @@
   {
     "__type__": "cc.PostSettingsInfo",
     "_toneMappingType": 0
+  },
+  {
+    "__type__": "cc.Node",
+    "_name": "UIRoot",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "_parent": {
+      "__id__": 7
+    },
+    "_children": [],
+    "_active": true,
+    "_components": [
+      {
+        "__id__": 24
+      }
+    ],
+    "_prefab": null,
+    "_lpos": {
+      "__type__": "cc.Vec3",
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "_lrot": {
+      "__type__": "cc.Quat",
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "w": 1
+    },
+    "_lscale": {
+      "__type__": "cc.Vec3",
+      "x": 1,
+      "y": 1,
+      "z": 1
+    },
+    "_mobility": 0,
+    "_layer": 33554432,
+    "_euler": {
+      "__type__": "cc.Vec3",
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "_id": "dNMl2KOIXRp+TZPZyqX9Lc"
+  },
+  {
+    "__type__": "cc.UITransform",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 23
+    },
+    "_enabled": true,
+    "__prefab": null,
+    "_contentSize": {
+      "__type__": "cc.Size",
+      "width": 640,
+      "height": 1136
+    },
+    "_anchorPoint": {
+      "__type__": "cc.Vec2",
+      "x": 0.5,
+      "y": 0.5
+    },
+    "_id": "RGGIPRHblU608QqWI7XQjI"
+  },
+  {
+    "__type__": "cc.AudioSource",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 7
+    },
+    "_enabled": true,
+    "__prefab": null,
+    "_clip": null,
+    "_loop": false,
+    "_playOnAwake": false,
+    "_volume": 1,
+    "_id": "ZIF/1/PSVcPpgjSfsiaziF"
   }
 ]

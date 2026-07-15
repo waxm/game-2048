@@ -20,6 +20,18 @@ export class ResManager {
     /** 已经加载过的 Asset Bundle 缓存。 */
     private static readonly _bundles: Map<string, AssetManager.Bundle> = new Map();
 
+    /** 正在加载的 Asset Bundle 任务，避免同一分包被并发请求多次。 */
+    private static readonly _bundleLoadPromises: Map<string, Promise<AssetManager.Bundle>> = new Map();
+
+    /** 分包名到当前请求编号的映射，用于精确清理对应的异步任务。 */
+    private static readonly _bundleLoadRequestIds: Map<string, number> = new Map();
+
+    /** 全局递增的分包请求编号，重置前后的请求不会重复。 */
+    private static _nextBundleLoadRequestId = 1;
+
+    /** 资源管理器生命周期版本，clearBundles 后旧异步结果不得重新写入缓存。 */
+    private static _lifecycleVersion = 0;
+
     /**
      * 加载 Asset Bundle。
      *
@@ -32,11 +44,30 @@ export class ResManager {
             return Promise.resolve(cachedBundle);
         }
 
-        return new Promise((resolve, reject) => {
+        const loadingPromise = this._bundleLoadPromises.get(bundleName);
+        if (loadingPromise) {
+            return loadingPromise;
+        }
+
+        const lifecycleVersion = this._lifecycleVersion;
+        const requestId = this._nextBundleLoadRequestId++;
+        this._bundleLoadRequestIds.set(bundleName, requestId);
+        const newLoadingPromise = new Promise<AssetManager.Bundle>((resolve, reject) => {
             assetManager.loadBundle(bundleName, (error, bundle) => {
+                if (this._bundleLoadRequestIds.get(bundleName) === requestId) {
+                    this._bundleLoadPromises.delete(bundleName);
+                    this._bundleLoadRequestIds.delete(bundleName);
+                }
                 if (error || !bundle) {
                     Logger.error(`分包加载失败：${bundleName}`, error);
-                    reject(error);
+                    reject(error ?? new Error(`分包加载结果为空：${bundleName}`));
+                    return;
+                }
+
+                // reset 后返回的旧分包没有持有者，必须立即移除且不能重新进入缓存。
+                if (lifecycleVersion !== this._lifecycleVersion) {
+                    assetManager.removeBundle(bundle);
+                    reject(new Error(`分包加载已因资源管理器重置而失效：${bundleName}`));
                     return;
                 }
 
@@ -45,6 +76,12 @@ export class ResManager {
                 resolve(bundle);
             });
         });
+
+        // 若引擎同步执行了回调，请求编号已经被清理，此时不能再写入一个已结束的 Promise。
+        if (this._bundleLoadRequestIds.get(bundleName) === requestId) {
+            this._bundleLoadPromises.set(bundleName, newLoadingPromise);
+        }
+        return newLoadingPromise;
     }
 
     /**
@@ -151,6 +188,21 @@ export class ResManager {
         assetManager.removeBundle(bundle);
         this._bundles.delete(bundleName);
         Logger.info(`分包已移除：${bundleName}`);
+    }
+
+    /**
+     * 移除资源管理器持有的全部 Asset Bundle。
+     *
+     * resources 是引擎内置加载器，不在这里整体释放；业务仍需按资源所有权单独 release。
+     */
+    public static clearBundles(): void {
+        this._lifecycleVersion += 1;
+        this._bundleLoadPromises.clear();
+        this._bundleLoadRequestIds.clear();
+        const bundleNames = Array.from(this._bundles.keys());
+        for (const bundleName of bundleNames) {
+            this.removeBundle(bundleName);
+        }
     }
 
     /**

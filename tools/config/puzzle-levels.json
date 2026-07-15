@@ -1,0 +1,15 @@
+{
+  "defaults": {
+    "rows": 3,
+    "columns": 3,
+    "boardWidth": 448,
+    "boardHeight": 448,
+    "timeLimitSeconds": 30,
+    "pieceOrder": [4, 0, 7, 2, 8, 3, 6, 1, 5]
+  },
+  "levels": {
+    "1": {
+      "timeLimitSeconds": 30
+    }
+  }
+}

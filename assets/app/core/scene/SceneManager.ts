@@ -18,6 +18,9 @@ export class SceneManager {
     /** 当前是否正在加载场景，避免重复切换。 */
     private static _loading = false;
 
+    /** 场景加载请求编号，用于阻止 reset 后的旧回调写回管理器状态。 */
+    private static _loadRequestId = 0;
+
     /** 获取当前场景名。 */
     public static get currentSceneName(): string {
         return this._currentSceneName;
@@ -41,10 +44,15 @@ export class SceneManager {
         }
 
         this._loading = true;
+        const requestId = ++this._loadRequestId;
         Logger.info(`开始加载场景：${sceneName}`);
 
         return new Promise((resolve, reject) => {
             director.loadScene(sceneName, (error) => {
+                if (requestId !== this._loadRequestId) {
+                    resolve();
+                    return;
+                }
                 this._loading = false;
 
                 if (error) {
@@ -84,5 +92,16 @@ export class SceneManager {
     public static syncCurrentScene(): void {
         const scene = director.getScene();
         this._currentSceneName = scene?.name ?? "";
+    }
+
+    /**
+     * 清空框架记录的场景状态。
+     *
+     * 这里只重置管理器状态，不主动销毁或切换 Cocos 当前场景。
+     */
+    public static reset(): void {
+        this._loadRequestId += 1;
+        this._currentSceneName = "";
+        this._loading = false;
     }
 }

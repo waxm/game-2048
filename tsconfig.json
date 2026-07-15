@@ -1,13 +1,13 @@
 {
-    /* Base configuration. Do not edit this field. */
+    /* Cocos Creator 自动生成的基础配置，不修改继承路径。 */
     "extends": "./temp/tsconfig.cocos.json",
 
-    /* Add your custom configuration here. */
+    /* 项目自定义的 TypeScript 配置。 */
     "compilerOptions": {
         "strict": false,
 
-        /* TypeScript 6 会提示 Cocos 3.8.4 生成的 moduleResolution=node 配置已废弃，这里先忽略该兼容提示。 */
-        "ignoreDeprecations": "6.0",
+        /* 忽略 Cocos 3.8.4 生成配置中的旧模块解析提示。 */
+        "ignoreDeprecations": "5.0",
 
         /* 跳过引擎声明文件检查，避免 Creator 自带声明和本机 TypeScript 版本差异导致误报。 */
         "skipLibCheck": true

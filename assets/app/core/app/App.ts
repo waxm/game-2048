@@ -1,7 +1,10 @@
 import { EventCenter } from "../event/EventCenter";
 import { AudioManager } from "../audio/AudioManager";
+import { PoolManager } from "../pool/PoolManager";
+import { ResManager } from "../resource/ResManager";
 import { SceneManager } from "../scene/SceneManager";
 import { StorageManager } from "../data/StorageManager";
+import { TimerManager } from "../timer/TimerManager";
 import { UIManager } from "../ui/UIManager";
 import { Logger } from "../utils/Logger";
 
@@ -88,6 +91,13 @@ export class App {
      * 通常用于测试、重新进入游戏，或以后做热重载时清理全局状态。
      */
     public static reset(): void {
+        // UI 关闭会触发面板清理逻辑，因此必须在清空全局事件之前执行。
+        UIManager.clear();
+        TimerManager.clearAll();
+        PoolManager.clearAll();
+        AudioManager.reset();
+        ResManager.clearBundles();
+        SceneManager.reset();
         EventCenter.clear();
         this._services.clear();
         this._inited = false;

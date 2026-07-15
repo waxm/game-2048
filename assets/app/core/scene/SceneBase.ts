@@ -18,6 +18,22 @@ export class SceneBase extends Component {
   }
 
   /**
+   * 校验场景脚本在 Inspector 中声明的必填引用。
+   *
+   * 场景结构缺失时立即中断启动，避免运行时创建替代节点掩盖绑定错误。
+   */
+  protected assertRequiredBindings(bindings: Record<string, unknown>): void {
+    const missingNames = Object.keys(bindings).filter(
+      (name) => bindings[name] === null || bindings[name] === undefined,
+    );
+    if (missingNames.length > 0) {
+      throw new Error(
+        `Scene 节点未绑定：${this.node.name}.${missingNames.join("、")}`,
+      );
+    }
+  }
+
+  /**
    * Cocos 生命周期：节点加载时调用。
    *
    * 这里统一触发场景进入逻辑和事件注册。
