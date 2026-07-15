@@ -1,7 +1,7 @@
 [
   {
     "__type__": "cc.Prefab",
-    "_name": "UIFailPanel",
+    "_name": "UIResultPanel",
     "_objFlags": 0,
     "_native": "",
     "data": {
@@ -13,7 +13,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "UIFailPanel",
+    "_name": "UIResultPanel",
     "_objFlags": 0,
     "_parent": null,
     "_children": [
@@ -447,7 +447,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "RetryButton",
+    "_name": "PrimaryButton",
     "_objFlags": 0,
     "_parent": {
       "__id__": 1
@@ -659,7 +659,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "重玩",
+    "_string": "下一关",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 28,
@@ -919,11 +919,14 @@
     "messageLabel": {
       "__id__": 13
     },
-    "retryButton": {
+    "primaryButton": {
       "__id__": 17
     },
-    "retryButtonGraphics": {
+    "primaryButtonGraphics": {
       "__id__": 16
+    },
+    "primaryButtonLabel": {
+      "__id__": 20
     },
     "homeButton": {
       "__id__": 24
@@ -941,7 +944,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "eTTHfCOjVVlpfgUR9LzLLN"
+    "fileId": "WkxoI52h4DK4WODCYwgNvc"
   },
   {
     "__type__": "cc.PrefabInfo",
@@ -951,7 +954,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "jG6b7NA5ZmNZrAPJg5MNKK"
+    "fileId": "Mg2oiBGYEUolQVQUbsgFsD"
   },
   {
     "__type__": "cc.PrefabInfo",
@@ -961,7 +964,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "jWw7HMDyxCUd8tsu2MHK2H"
+    "fileId": "HqNIEg1iu5xM4wr5GlqMCa"
   },
   {
     "__type__": "cc.PrefabInfo",
@@ -971,7 +974,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "20Frdrtl5i6Eku3iJAtPD6"
+    "fileId": "UbWUrNMbbegmOH3OOq4Ldc"
   },
   {
     "__type__": "cc.PrefabInfo",
@@ -981,7 +984,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "TktnAyIAhFOeESc2LIlmp9"
+    "fileId": "TWVQ9BDoYj9CbgyPyzTxQn"
   },
   {
     "__type__": "cc.PrefabInfo",
@@ -991,7 +994,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "y3K96moLTojI1BQUgXA7zX"
+    "fileId": "GE9DJ70JHwYLasETEjiAg5"
   },
   {
     "__type__": "cc.PrefabInfo",
@@ -1001,7 +1004,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "0Pd0alozagvEFtee2KaaaN"
+    "fileId": "5qHV6J0B97NrWewvSwAuzt"
   },
   {
     "__type__": "cc.PrefabInfo",
@@ -1011,6 +1014,6 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "nebDYtRAunsoWF3BXJyfZl"
+    "fileId": "8FLhnCI1Ng7yTYhnV2wDKx"
   }
 ]

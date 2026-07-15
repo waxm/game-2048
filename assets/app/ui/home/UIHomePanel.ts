@@ -2,7 +2,19 @@ import { _decorator, Button, Label } from "cc";
 import { EventCenter } from "../../core/event/EventCenter";
 import { UIBase } from "../../core/ui/UIBase";
 import { Logger } from "../../core/utils/Logger";
-import { GameEvent } from "../../game/GameEvent";
+import { GameEvent, GameStartRequest } from "../../game/GameEvent";
+
+/** 打开首页面板时传入的拼图进度摘要。 */
+export interface UIHomePanelOpenParams {
+    /** 默认开始按钮将进入的最高已解锁关卡。 */
+    targetLevel: number;
+
+    /** 当前已经完成的关卡数量。 */
+    completedCount: number;
+
+    /** 当前资源目录中的关卡总数。 */
+    totalCount: number;
+}
 
 const { ccclass, property } = _decorator;
 
@@ -17,9 +29,13 @@ export class UIHomePanel extends UIBase {
     @property({ type: Label })
     public titleLabel: Label | null = null;
 
-    /** 开始第 1 关按钮。 */
+    /** 开始当前目标关卡的按钮。 */
     @property({ type: Button })
     public startButton: Button | null = null;
+
+    /** 开始按钮中用于显示目标关卡编号的文字。 */
+    @property({ type: Label })
+    public startButtonLabel: Label | null = null;
 
     /** 首页玩法提示。 */
     @property({ type: Label })
@@ -28,11 +44,15 @@ export class UIHomePanel extends UIBase {
     /** 是否已经注册按钮事件。 */
     private _eventsBound = false;
 
+    /** 点击开始按钮时需要进入的关卡编号。 */
+    private _targetLevel = 1;
+
     /** 节点加载时调用。 */
     protected onLoad(): void {
         this.assertRequiredBindings({
             titleLabel: this.titleLabel,
             startButton: this.startButton,
+            startButtonLabel: this.startButtonLabel,
             tipLabel: this.tipLabel,
         });
         this.bindEvents();
@@ -41,6 +61,13 @@ export class UIHomePanel extends UIBase {
     /** UI 打开时调用。 */
     protected onOpen(params?: unknown): void {
         super.onOpen(params);
+        const homeParams = this.readOpenParams(params);
+        this._targetLevel = homeParams.targetLevel;
+        this.titleLabel!.string = "拼图挑战";
+        this.startButtonLabel!.string = `开始第 ${homeParams.targetLevel} 关`;
+        this.tipLabel!.string =
+            `已完成 ${homeParams.completedCount} / ${homeParams.totalCount}，` +
+            `当前挑战第 ${homeParams.targetLevel} 关`;
         this.bindEvents();
         Logger.info("打开首页面板。", params);
     }
@@ -72,8 +99,25 @@ export class UIHomePanel extends UIBase {
         this.startButton?.node.off(Button.EventType.CLICK, this.onClickStart, this);
     }
 
-    /** 点击开始按钮后进入拼图第 1 关。 */
+    /** 校验大厅传入的进度摘要，避免首页展示错误存档状态。 */
+    private readOpenParams(params: unknown): UIHomePanelOpenParams {
+        if (!params || typeof params !== "object" || !("targetLevel" in params)) {
+            throw new Error("打开 UIHomePanel 时必须传入关卡进度参数。");
+        }
+        const homeParams = params as UIHomePanelOpenParams;
+        if (
+            !Number.isInteger(homeParams.targetLevel) ||
+            !Number.isInteger(homeParams.completedCount) ||
+            !Number.isInteger(homeParams.totalCount)
+        ) {
+            throw new Error("UIHomePanel 收到的关卡进度参数无效。");
+        }
+        return homeParams;
+    }
+
+    /** 点击开始按钮后进入当前最高已解锁关卡。 */
     public onClickStart(): void {
-        EventCenter.emit(GameEvent.GameStart);
+        const request: GameStartRequest = { level: this._targetLevel };
+        EventCenter.emit(GameEvent.GameStart, request);
     }
 }

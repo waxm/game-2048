@@ -17,7 +17,7 @@ import { ResManager } from "../../core/resource/ResManager";
 import { TimerManager } from "../../core/timer/TimerManager";
 import { UIBase } from "../../core/ui/UIBase";
 import { Logger } from "../../core/utils/Logger";
-import { PuzzleLevel001Config } from "../../game/config/PuzzleLevelConfig";
+import type { PuzzleLevelConfig } from "../../game/config/PuzzleLevelConfig";
 import { GameEvent } from "../../game/GameEvent";
 import { PuzzleGrid } from "../../game/logic/PuzzleGrid";
 import { PuzzleImageSlicer } from "../../game/logic/PuzzleImageSlicer";
@@ -47,7 +47,13 @@ interface SnapCandidate {
   distance: number;
 }
 
-/** 第 1 关规则网格相邻拼接面板。 */
+/** 打开拼图面板时必须传入的关卡参数。 */
+export interface UIGamePanelOpenParams {
+  /** 当前需要创建和展示的关卡配置。 */
+  levelConfig: PuzzleLevelConfig;
+}
+
+/** 通用规则网格相邻拼接面板。 */
 @ccclass("UIGamePanel")
 export class UIGamePanel extends UIBase {
   /** 进入关卡后展示完整原图的时长，单位为秒。 */
@@ -56,20 +62,8 @@ export class UIGamePanel extends UIBase {
   /** 增加时间道具单次补充的秒数。 */
   private static readonly TIME_TOOL_BONUS_SECONDS = 10;
 
-  /** 单块拼图的显示宽度，由完整拼图宽度和列数计算。 */
-  private static readonly PIECE_WIDTH =
-    PuzzleLevel001Config.boardWidth / PuzzleLevel001Config.columns;
-
-  /** 单块拼图的显示高度，由完整拼图高度和行数计算。 */
-  private static readonly PIECE_HEIGHT =
-    PuzzleLevel001Config.boardHeight / PuzzleLevel001Config.rows;
-
   /** 初始网格中格子之间的空隙，吸附成功后该空隙会归零。 */
   private static readonly INITIAL_GRID_GAP = 20;
-
-  /** 相邻拼图中心距离与正确距离之间允许的误差。 */
-  private static readonly SNAP_DISTANCE =
-    Math.min(UIGamePanel.PIECE_WIDTH, UIGamePanel.PIECE_HEIGHT) * 0.34;
 
   /** 拼图与容器边缘之间保留的最小距离，避免贴边后难以再次拖动。 */
   private static readonly DRAG_BOUNDARY_PADDING = 8;
@@ -79,14 +73,6 @@ export class UIGamePanel extends UIBase {
 
   /** 时间进度条的固定高度。 */
   private static readonly TIMER_BAR_HEIGHT = 24;
-
-  /** 当前关卡的规则网格，统一处理上下左右邻接关系。 */
-  private readonly _grid = new PuzzleGrid(
-    PuzzleLevel001Config.rows,
-    PuzzleLevel001Config.columns,
-    UIGamePanel.PIECE_WIDTH,
-    UIGamePanel.PIECE_HEIGHT,
-  );
 
   /** 关卡标题。 */
   @property({ type: Label })
@@ -168,6 +154,21 @@ export class UIGamePanel extends UIBase {
   /** 是否已注册按钮和状态事件。 */
   private _eventsBound = false;
 
+  /** 当前打开面板时由场景传入的关卡配置。 */
+  private _levelConfig: PuzzleLevelConfig | null = null;
+
+  /** 当前关卡单块拼图的显示宽度。 */
+  private _pieceWidth = 0;
+
+  /** 当前关卡单块拼图的显示高度。 */
+  private _pieceHeight = 0;
+
+  /** 当前关卡允许触发吸附的最大位置误差。 */
+  private _snapDistance = 0;
+
+  /** 当前关卡的规则网格，统一处理上下左右邻接关系。 */
+  private _grid: PuzzleGrid | null = null;
+
   /** 当前关卡是否已完成。 */
   private _completed = false;
 
@@ -175,7 +176,7 @@ export class UIGamePanel extends UIBase {
   private _failed = false;
 
   /** 当前关卡正式拼图阶段剩余的秒数。 */
-  private _remainingTime = PuzzleLevel001Config.timeLimitSeconds;
+  private _remainingTime = 0;
 
   /** 是否正在消耗本关剩余时间。 */
   private _timerRunning = false;
@@ -213,7 +214,7 @@ export class UIGamePanel extends UIBase {
   /** 是否正在通过道具查看原图，防止连续点击创建重叠的预览任务。 */
   private _toolPreviewRunning = false;
 
-  /** 节点加载时校验 Prefab 引用并创建第一关。 */
+  /** 节点加载时校验 Prefab 引用并准备固定显示组件。 */
   protected onLoad(): void {
     this.assertRequiredBindings({
       titleLabel: this.titleLabel,
@@ -237,21 +238,21 @@ export class UIGamePanel extends UIBase {
 
     this.drawTimerBar();
     this.drawSourcePreviewOverlay();
-    this.resetLevelTimer();
     this.bindEvents();
-    void this.createLevel();
   }
 
-  /** 面板打开时初始化固定文案。 */
+  /** 面板打开时读取关卡参数并创建对应拼图。 */
   protected onOpen(params?: unknown): void {
     super.onOpen(params);
-    this.titleLabel!.string = `关卡 ${PuzzleLevel001Config.level}`;
-    const totalPieces =
-      PuzzleLevel001Config.rows * PuzzleLevel001Config.columns;
+    const levelConfig = this.readOpenParams(params);
+    this.configureLevel(levelConfig);
+    this.titleLabel!.string = `关卡 ${levelConfig.level}`;
+    const totalPieces = levelConfig.rows * levelConfig.columns;
     this.progressLabel!.string = `已连接 0 / ${totalPieces}`;
     this.feedbackLabel!.string = "拖动相邻图片，让正确边缘靠近";
     this.refreshTimerDisplay();
     this.bindEvents();
+    void this.createLevel();
   }
 
   /** 正式游戏阶段逐帧扣减时间并平滑刷新进度条。 */
@@ -275,10 +276,56 @@ export class UIGamePanel extends UIBase {
     this.hideSourcePreview();
     this.unbindEvents();
     this.clearPieces();
+    this._grid = null;
+    this._levelConfig = null;
     super.onClose();
   }
 
-  /** 加载第一关整图，运行时裁成网格块并按打乱顺序放入规则网格。 */
+  /** 从 UIManager 打开参数中取得必填关卡配置，缺失时立即阻止错误界面运行。 */
+  private readOpenParams(params: unknown): PuzzleLevelConfig {
+    if (
+      !params ||
+      typeof params !== "object" ||
+      !("levelConfig" in params) ||
+      !params.levelConfig
+    ) {
+      throw new Error("打开 UIGamePanel 时必须传入 levelConfig。");
+    }
+    return params.levelConfig as PuzzleLevelConfig;
+  }
+
+  /** 根据当前关卡配置准备切片尺寸、吸附阈值和网格规则。 */
+  private configureLevel(levelConfig: PuzzleLevelConfig): void {
+    this._levelConfig = levelConfig;
+    this._pieceWidth = levelConfig.boardWidth / levelConfig.columns;
+    this._pieceHeight = levelConfig.boardHeight / levelConfig.rows;
+    this._snapDistance = Math.min(this._pieceWidth, this._pieceHeight) * 0.34;
+    this._grid = new PuzzleGrid(
+      levelConfig.rows,
+      levelConfig.columns,
+      this._pieceWidth,
+      this._pieceHeight,
+    );
+    this.resetLevelTimer();
+  }
+
+  /** 返回当前关卡配置；未通过正常打开流程初始化时立即报错。 */
+  private get levelConfig(): PuzzleLevelConfig {
+    if (!this._levelConfig) {
+      throw new Error("UIGamePanel 当前没有有效的关卡配置。");
+    }
+    return this._levelConfig;
+  }
+
+  /** 返回当前关卡网格；未初始化时立即报错。 */
+  private get grid(): PuzzleGrid {
+    if (!this._grid) {
+      throw new Error("UIGamePanel 当前没有有效的拼图网格。");
+    }
+    return this._grid;
+  }
+
+  /** 加载当前关卡整图，运行时裁成网格块并按打乱顺序放入规则网格。 */
   private async createLevel(): Promise<void> {
     const requestId = ++this._levelRequestId;
     this.cancelSourcePreviewWait();
@@ -292,7 +339,7 @@ export class UIGamePanel extends UIBase {
     try {
       // 关卡资源按 SpriteFrame 导入，裁切器使用完整底层纹理生成网格运行时切图。
       const sourceFrame = await ResManager.load(
-        PuzzleLevel001Config.sourceImagePath,
+        this.levelConfig.sourceImagePath,
         SpriteFrame,
       );
       if (!this.node.isValid || requestId !== this._levelRequestId) {
@@ -304,8 +351,8 @@ export class UIGamePanel extends UIBase {
       this._levelSourceFrame = sourceFrame;
       this._pieceFrames = PuzzleImageSlicer.slice(
         sourceFrame,
-        PuzzleLevel001Config.rows,
-        PuzzleLevel001Config.columns,
+        this.levelConfig.rows,
+        this.levelConfig.columns,
       );
       // 运行时切片共享同一张关卡纹理，禁止自动合图可避免重玩时复用旧图集区域。
       this._pieceFrames.forEach((frame) => {
@@ -316,7 +363,7 @@ export class UIGamePanel extends UIBase {
         return;
       }
 
-      PuzzleLevel001Config.pieceOrder.forEach((pieceId, displayIndex) => {
+      this.levelConfig.pieceOrder.forEach((pieceId, displayIndex) => {
         const pieceNode = instantiate(this.piecePrefab!);
         const piece = pieceNode.getComponent(PuzzlePiece);
         if (!piece) {
@@ -325,7 +372,7 @@ export class UIGamePanel extends UIBase {
 
         this.puzzleContainer!.addChild(pieceNode);
         pieceNode.setPosition(this.getInitialGridPosition(displayIndex));
-        piece.setDisplaySize(UIGamePanel.PIECE_WIDTH, UIGamePanel.PIECE_HEIGHT);
+        piece.setDisplaySize(this._pieceWidth, this._pieceHeight);
         piece.setData({
           id: pieceId,
           spriteFrame: this._pieceFrames[pieceId],
@@ -347,8 +394,8 @@ export class UIGamePanel extends UIBase {
       }
       this.hideSourcePreview();
       this.clearPieces();
-      this.feedbackLabel!.string = "第一关图片加载失败，请查看控制台";
-      Logger.error("创建第 1 关拼图失败。", error);
+      this.feedbackLabel!.string = `第 ${this.levelConfig.level} 关图片加载失败，请查看控制台`;
+      Logger.error(`创建第 ${this.levelConfig.level} 关拼图失败。`, error);
     }
   }
 
@@ -488,14 +535,14 @@ export class UIGamePanel extends UIBase {
   /** 恢复本关完整时间，但在原图观察阶段不开始扣减。 */
   private resetLevelTimer(): void {
     this._timerRunning = false;
-    this._remainingTime = PuzzleLevel001Config.timeLimitSeconds;
+    this._remainingTime = this.levelConfig.timeLimitSeconds;
     this.refreshTimerDisplay();
   }
 
   /** 原图预览结束且拼图创建完成后开始关卡计时。 */
   private startLevelTimer(): void {
     this._timerRunning = true;
-    this._remainingTime = PuzzleLevel001Config.timeLimitSeconds;
+    this._remainingTime = this.levelConfig.timeLimitSeconds;
     this.refreshTimerDisplay();
   }
 
@@ -506,7 +553,7 @@ export class UIGamePanel extends UIBase {
 
   /** 根据当前剩余比例刷新进度条长度和整秒文本。 */
   private refreshTimerDisplay(): void {
-    const limit = PuzzleLevel001Config.timeLimitSeconds;
+    const limit = this.levelConfig.timeLimitSeconds;
     const ratio =
       limit > 0 ? Math.max(0, Math.min(1, this._remainingTime / limit)) : 0;
     this.timerBarFill!.node.setScale(ratio, 1, 1);
@@ -527,8 +574,7 @@ export class UIGamePanel extends UIBase {
 
   /** 判断当前是否处于允许使用游戏道具的正式拼图阶段。 */
   private canUseGameTool(): boolean {
-    const totalPieces =
-      PuzzleLevel001Config.rows * PuzzleLevel001Config.columns;
+    const totalPieces = this.levelConfig.rows * this.levelConfig.columns;
     return (
       this._timerRunning &&
       !this._completed &&
@@ -616,7 +662,7 @@ export class UIGamePanel extends UIBase {
       for (const targetId of pieceIds) {
         if (
           movingId >= targetId ||
-          !this._grid.areAdjacent(movingId, targetId)
+          !this.grid.areAdjacent(movingId, targetId)
         ) {
           continue;
         }
@@ -639,7 +685,7 @@ export class UIGamePanel extends UIBase {
           continue;
         }
 
-        const relativeOffset = this._grid.getRelativeOffset(
+        const relativeOffset = this.grid.getRelativeOffset(
           movingId,
           targetId,
         );
@@ -672,12 +718,14 @@ export class UIGamePanel extends UIBase {
    * 图片块按 pieceOrder 打乱，但节点中心始终落在规则网格上，保证初始界面整洁。
    */
   private getInitialGridPosition(displayIndex: number): Vec3 {
-    const displayRow = Math.floor(displayIndex / PuzzleLevel001Config.columns);
-    const displayColumn = displayIndex % PuzzleLevel001Config.columns;
-    const stepX = UIGamePanel.PIECE_WIDTH + UIGamePanel.INITIAL_GRID_GAP;
-    const stepY = UIGamePanel.PIECE_HEIGHT + UIGamePanel.INITIAL_GRID_GAP;
-    const x = (displayColumn - (PuzzleLevel001Config.columns - 1) / 2) * stepX;
-    const y = 40 + ((PuzzleLevel001Config.rows - 1) / 2 - displayRow) * stepY;
+    const displayRow = Math.floor(displayIndex / this.levelConfig.columns);
+    const displayColumn = displayIndex % this.levelConfig.columns;
+    const stepX = this._pieceWidth + UIGamePanel.INITIAL_GRID_GAP;
+    const stepY = this._pieceHeight + UIGamePanel.INITIAL_GRID_GAP;
+    const x =
+      (displayColumn - (this.levelConfig.columns - 1) / 2) * stepX;
+    const y =
+      40 + ((this.levelConfig.rows - 1) / 2 - displayRow) * stepY;
     return new Vec3(x, y, 0);
   }
 
@@ -765,11 +813,11 @@ export class UIGamePanel extends UIBase {
           return;
         }
 
-        if (!this._grid.areAdjacent(draggedId, targetId)) {
+        if (!this.grid.areAdjacent(draggedId, targetId)) {
           return;
         }
 
-        const relativeOffset = this._grid.getRelativeOffset(
+        const relativeOffset = this.grid.getRelativeOffset(
           draggedId,
           targetId,
         );
@@ -785,7 +833,7 @@ export class UIGamePanel extends UIBase {
         );
         const distance = correction.length();
         if (
-          distance <= UIGamePanel.SNAP_DISTANCE &&
+          distance <= this._snapDistance &&
           (!bestCandidate || distance < bestCandidate.distance)
         ) {
           bestCandidate = {
@@ -834,8 +882,8 @@ export class UIGamePanel extends UIBase {
       throw new Error("UIGamePanel.puzzleContainer 缺少 UITransform 组件。");
     }
 
-    const halfPieceWidth = UIGamePanel.PIECE_WIDTH / 2;
-    const halfPieceHeight = UIGamePanel.PIECE_HEIGHT / 2;
+    const halfPieceWidth = this._pieceWidth / 2;
+    const halfPieceHeight = this._pieceHeight / 2;
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
@@ -950,7 +998,7 @@ export class UIGamePanel extends UIBase {
     const center = this.getClusterCenter(allPieces);
     this.moveCluster(allPieces, new Vec3(-center.x, 20 - center.y, 0));
     this._pieces.forEach((runtime) => runtime.piece.setInteractable(false));
-    this.feedbackLabel!.string = "第 1 关完成！";
+    this.feedbackLabel!.string = `第 ${this.levelConfig.level} 关完成！`;
   };
 
   /** 计算组合外接矩形的中心点，用于通关后居中展示完整图片。 */

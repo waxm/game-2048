@@ -4,7 +4,11 @@ import { SceneBase } from "../core/scene/SceneBase";
 import { SceneManager } from "../core/scene/SceneManager";
 import { UIManager } from "../core/ui/UIManager";
 import { Logger } from "../core/utils/Logger";
-import { GameEvent } from "../game/GameEvent";
+import { PuzzleLevelNumbers } from "../game/config/PuzzleLevelConfig";
+import { GameEvent, GameStartRequest } from "../game/GameEvent";
+import { PuzzleLevelSession } from "../game/progress/PuzzleLevelSession";
+import { PuzzleProgressManager } from "../game/progress/PuzzleProgressManager";
+import { UIHomePanelOpenParams } from "../ui/home/UIHomePanel";
 
 const { ccclass, property } = _decorator;
 
@@ -30,7 +34,14 @@ export class LobbyScene extends SceneBase {
         this.assertRequiredBindings({ uiRoot: this.uiRoot });
         Logger.info("进入大厅场景。");
         this.prepareHomePanel();
-        void UIManager.open("UIHomePanel");
+        const progress = PuzzleProgressManager.getProgress();
+        const levelConfig = PuzzleLevelSession.selectHighestUnlockedLevel();
+        const params: UIHomePanelOpenParams = {
+            targetLevel: levelConfig.level,
+            completedCount: progress.completedLevels.length,
+            totalCount: PuzzleLevelNumbers.length,
+        };
+        void UIManager.open("UIHomePanel", params);
     }
 
     /**
@@ -50,8 +61,12 @@ export class LobbyScene extends SceneBase {
     /**
      * 响应开始游戏事件。
      */
-    private onGameStart = (): void => {
-        Logger.info("收到开始游戏事件。");
+    private onGameStart = (request?: GameStartRequest): void => {
+        if (!request) {
+            return;
+        }
+        const levelConfig = PuzzleLevelSession.selectLevel(request.level);
+        Logger.info(`收到开始第 ${levelConfig.level} 关事件。`);
         UIManager.close("UIHomePanel");
         SceneManager.load("Game");
     };

@@ -278,7 +278,10 @@
     "tipLabel": {
       "__id__": 23
     },
-    "_id": ""
+    "_id": "",
+    "startButtonLabel": {
+      "__id__": 20
+    }
   },
   {
     "__type__": "cc.CompPrefabInfo",

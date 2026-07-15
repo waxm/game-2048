@@ -11,11 +11,11 @@ const uiLayer = 33554432;
 const panelScriptType = "e6b99/MOTpC9rOJra+XZpqg";
 // 此 ID 来自 Creator 对 PuzzlePiece.ts UUID 的压缩结果，Prefab 反序列化依赖它查找脚本类。
 const pieceScriptType = "ef85cMk1SROQrGG015486DV";
-// 此 ID 来自 Creator 对 UIFailPanel.ts UUID 的实际编译结果。
-const failPanelScriptType = "469e9+YjXZMb6lLQ0nZFBPe";
+// 此 ID 来自 Creator 对 UIResultPanel.ts UUID 的实际编译结果。
+const resultPanelScriptType = "469e9+YjXZMb6lLQ0nZFBPe";
 const piecePrefabUuid = "9bf31917-81ef-4bb0-ae0f-7f938f0d3573";
 const panelPrefabUuid = "79764185-c340-4a5f-ab8a-ab073eae8f2d";
-const failPanelPrefabUuid = "1a4d02a8-e19b-47f8-aff5-7be3e47b80e0";
+const resultPanelPrefabUuid = "1a4d02a8-e19b-47f8-aff5-7be3e47b80e0";
 // 第 1 关完整图片为 448×448，Prefab 初始尺寸与运行时 3×3 网格保持一致。
 const level001PieceWidth = 448 / 3;
 const level001PieceHeight = 448 / 3;
@@ -27,13 +27,13 @@ function main() {
   writePrefab("PuzzlePiece", createPiecePrefab(), piecePrefabUuid);
   writePrefab("UIGamePanel", createPanelPrefab(), panelPrefabUuid);
   writePrefab(
-    "UIFailPanel",
-    createFailPanelPrefab(),
-    failPanelPrefabUuid,
+    "UIResultPanel",
+    createResultPanelPrefab(),
+    resultPanelPrefabUuid,
     popupPrefabDir,
   );
   console.log(
-    "Generated PuzzlePiece.prefab, UIGamePanel.prefab and UIFailPanel.prefab",
+    "Generated PuzzlePiece.prefab, UIGamePanel.prefab and UIResultPanel.prefab",
   );
 }
 
@@ -277,10 +277,10 @@ function createPanelPrefab() {
   return objects;
 }
 
-/** 创建拼图超时失败弹窗 Prefab。 */
-function createFailPanelPrefab() {
-  const objects = [createPrefabAsset("UIFailPanel")];
-  const rootId = addNode(objects, "UIFailPanel", null, 0, 0, 640, 1136);
+/** 创建拼图成功和失败共用的结算弹窗 Prefab。 */
+function createResultPanelPrefab() {
+  const objects = [createPrefabAsset("UIResultPanel")];
+  const rootId = addNode(objects, "UIResultPanel", null, 0, 0, 640, 1136);
   const overlayGraphicsId = addGraphics(objects, rootId);
   addBlockInputEvents(objects, rootId);
 
@@ -310,11 +310,11 @@ function createFailPanelPrefab() {
     24,
     color(62, 70, 82),
   );
-  const retry = addGraphicsButton(
+  const primary = addGraphicsButton(
     objects,
     rootId,
-    "RetryButton",
-    "重玩",
+    "PrimaryButton",
+    "下一关",
     0,
     -45,
   );
@@ -327,7 +327,7 @@ function createFailPanelPrefab() {
     -130,
   );
   const scriptId = addObject(objects, {
-    __type__: failPanelScriptType,
+    __type__: resultPanelScriptType,
     _name: "",
     _objFlags: 0,
     node: ref(rootId),
@@ -336,8 +336,9 @@ function createFailPanelPrefab() {
     panelGraphics: ref(panelGraphicsId),
     titleLabel: ref(titleLabelId),
     messageLabel: ref(messageLabelId),
-    retryButton: ref(retry.buttonId),
-    retryButtonGraphics: ref(retry.graphicsId),
+    primaryButton: ref(primary.buttonId),
+    primaryButtonGraphics: ref(primary.graphicsId),
+    primaryButtonLabel: ref(primary.labelId),
     homeButton: ref(home.buttonId),
     homeButtonGraphics: ref(home.graphicsId),
     _id: "",
@@ -371,8 +372,14 @@ function addGraphicsButton(objects, parentId, name, text, x, y) {
   const graphicsId = addGraphics(objects, nodeId);
   const buttonId = addButton(objects, nodeId);
   const labelNodeId = addNode(objects, "Label", nodeId, 0, 0, 180, 56);
-  addLabel(objects, labelNodeId, text, 28, color(255, 255, 255));
-  return { nodeId, graphicsId, buttonId };
+  const labelId = addLabel(
+    objects,
+    labelNodeId,
+    text,
+    28,
+    color(255, 255, 255),
+  );
+  return { nodeId, graphicsId, buttonId, labelId };
 }
 
 /** 添加节点及其 UITransform。 */
@@ -600,7 +607,7 @@ function validatePrefab(name, objects) {
   const expectedScriptTypes = {
     UIGamePanel: panelScriptType,
     PuzzlePiece: pieceScriptType,
-    UIFailPanel: failPanelScriptType,
+    UIResultPanel: resultPanelScriptType,
   };
   const expectedScriptType = expectedScriptTypes[name];
   if (!expectedScriptType) {

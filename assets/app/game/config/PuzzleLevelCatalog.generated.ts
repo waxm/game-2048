@@ -55,5 +55,16 @@ export function getPuzzleLevelConfig(level: number): PuzzleLevelConfig | null {
   return PuzzleLevelConfigMap.get(level) ?? null;
 }
 
+/** 返回当前关卡在资源目录中的下一关编号，最后一关返回 null。 */
+export function getNextPuzzleLevelNumber(level: number): number | null {
+  const currentIndex = PuzzleLevelNumbers.findIndex(
+    (candidate) => candidate === level,
+  );
+  if (currentIndex < 0 || currentIndex >= PuzzleLevelNumbers.length - 1) {
+    return null;
+  }
+  return PuzzleLevelNumbers[currentIndex + 1];
+}
+
 /** 当前 Demo 使用的第一关配置。 */
 export const PuzzleLevel001Config = PuzzleLevelConfigMap.get(1)!;

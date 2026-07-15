@@ -32,6 +32,7 @@ export interface PuzzleLevelConfig {
  * 不在业务代码中手写重复的资源路径。
  */
 export {
+  getNextPuzzleLevelNumber,
   getPuzzleLevelConfig,
   PuzzleLevel001Config,
   PuzzleLevelConfigs,

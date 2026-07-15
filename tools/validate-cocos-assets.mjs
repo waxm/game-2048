@@ -58,6 +58,25 @@ function validateSerializedAsset(filePath) {
     validateSceneBindings(objects, relativePath, false);
   } else if (filePath.endsWith("Game.scene")) {
     validateSceneBindings(objects, relativePath, true);
+  } else if (filePath.endsWith("UIHomePanel.prefab")) {
+    validatePrefabBindings(objects, relativePath, {
+      titleLabel: "cc.Label",
+      startButton: "cc.Button",
+      startButtonLabel: "cc.Label",
+      tipLabel: "cc.Label",
+    });
+  } else if (filePath.endsWith("UIResultPanel.prefab")) {
+    validatePrefabBindings(objects, relativePath, {
+      overlayGraphics: "cc.Graphics",
+      panelGraphics: "cc.Graphics",
+      titleLabel: "cc.Label",
+      messageLabel: "cc.Label",
+      primaryButton: "cc.Button",
+      primaryButtonGraphics: "cc.Graphics",
+      primaryButtonLabel: "cc.Label",
+      homeButton: "cc.Button",
+      homeButtonGraphics: "cc.Graphics",
+    });
   }
 }
 
@@ -154,6 +173,29 @@ function validateSceneBindings(objects, relativePath, requireAudioSource) {
     objects[script.audioSource?.__id__]?.__type__ !== "cc.AudioSource"
   ) {
     throw new Error(`${relativePath} 的 GameScene 没有正确绑定 AudioSource。`);
+  }
+}
+
+/** 校验业务 Prefab 脚本的必填属性绑定及目标组件类型。 */
+function validatePrefabBindings(objects, relativePath, requiredBindings) {
+  const candidateScripts = objects.filter(
+    (object) =>
+      object?.node?.__id__ !== undefined &&
+      !String(object.__type__).startsWith("cc.") &&
+      Object.keys(requiredBindings).some((field) => Object.hasOwn(object, field)),
+  );
+  if (candidateScripts.length !== 1) {
+    throw new Error(`${relativePath} 无法确定唯一的业务面板脚本。`);
+  }
+
+  const script = candidateScripts[0];
+  for (const [field, expectedType] of Object.entries(requiredBindings)) {
+    const component = objects[script[field]?.__id__];
+    if (component?.__type__ !== expectedType) {
+      throw new Error(
+        `${relativePath} 的必填字段 ${field} 未绑定到 ${expectedType}。`,
+      );
+    }
   }
 }
 
