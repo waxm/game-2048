@@ -1,6 +1,8 @@
 import {
   _decorator,
   Button,
+  Color,
+  Graphics,
   instantiate,
   Label,
   Node,
@@ -51,6 +53,9 @@ export class UIGamePanel extends UIBase {
   /** 进入关卡后展示完整原图的时长，单位为秒。 */
   private static readonly SOURCE_PREVIEW_DURATION = 3;
 
+  /** 增加时间道具单次补充的秒数。 */
+  private static readonly TIME_TOOL_BONUS_SECONDS = 10;
+
   /** 单块拼图的显示宽度，由完整拼图宽度和列数计算。 */
   private static readonly PIECE_WIDTH =
     PuzzleLevel001Config.boardWidth / PuzzleLevel001Config.columns;
@@ -68,6 +73,12 @@ export class UIGamePanel extends UIBase {
 
   /** 拼图与容器边缘之间保留的最小距离，避免贴边后难以再次拖动。 */
   private static readonly DRAG_BOUNDARY_PADDING = 8;
+
+  /** 时间进度条的完整宽度。 */
+  private static readonly TIMER_BAR_WIDTH = 448;
+
+  /** 时间进度条的固定高度。 */
+  private static readonly TIMER_BAR_HEIGHT = 24;
 
   /** 当前关卡的规则网格，统一处理上下左右邻接关系。 */
   private readonly _grid = new PuzzleGrid(
@@ -101,6 +112,10 @@ export class UIGamePanel extends UIBase {
   @property({ type: Node })
   public sourcePreviewNode: Node | null = null;
 
+  /** 原图预览使用的全屏半透明蒙层。 */
+  @property({ type: Graphics })
+  public sourcePreviewOverlay: Graphics | null = null;
+
   /** 开局预览使用的完整原图组件。 */
   @property({ type: Sprite })
   public sourcePreviewSprite: Sprite | null = null;
@@ -109,6 +124,18 @@ export class UIGamePanel extends UIBase {
   @property({ type: Label })
   public sourcePreviewCountdownLabel: Label | null = null;
 
+  /** 时间进度条的底色绘制组件。 */
+  @property({ type: Graphics })
+  public timerBarBackground: Graphics | null = null;
+
+  /** 时间进度条的剩余时间填充组件。 */
+  @property({ type: Graphics })
+  public timerBarFill: Graphics | null = null;
+
+  /** 剩余秒数文本。 */
+  @property({ type: Label })
+  public timerLabel: Label | null = null;
+
   /** 重玩按钮。 */
   @property({ type: Button })
   public restartButton: Button | null = null;
@@ -116,6 +143,18 @@ export class UIGamePanel extends UIBase {
   /** 返回大厅按钮。 */
   @property({ type: Button })
   public backButton: Button | null = null;
+
+  /** 增加本关剩余时间的文字道具按钮。 */
+  @property({ type: Button })
+  public addTimeToolButton: Button | null = null;
+
+  /** 在游戏中再次查看完整原图的文字道具按钮。 */
+  @property({ type: Button })
+  public viewSourceToolButton: Button | null = null;
+
+  /** 自动完成一次正确相邻组合的文字道具按钮。 */
+  @property({ type: Button })
+  public autoMergeToolButton: Button | null = null;
 
   /** 拼图编号到运行实例的映射。 */
   private readonly _pieces = new Map<number, PieceRuntime>();
@@ -131,6 +170,15 @@ export class UIGamePanel extends UIBase {
 
   /** 当前关卡是否已完成。 */
   private _completed = false;
+
+  /** 当前关卡是否已经超时失败。 */
+  private _failed = false;
+
+  /** 当前关卡正式拼图阶段剩余的秒数。 */
+  private _remainingTime = PuzzleLevel001Config.timeLimitSeconds;
+
+  /** 是否正在消耗本关剩余时间。 */
+  private _timerRunning = false;
 
   /**
    * 当前关卡创建请求编号。
@@ -148,6 +196,23 @@ export class UIGamePanel extends UIBase {
   /** 当前原图预览剩余的整秒数。 */
   private _sourcePreviewRemainingSeconds = 0;
 
+  /**
+   * 当前关卡原图预览专用的 SpriteFrame。
+   *
+   * 开局观察和道具查看复用同一个独立对象，直到重玩或退出时才销毁；这样既不会
+   * 污染 ResManager 缓存，也不会在第二次查看时从运行中的资源状态重复克隆。
+   */
+  private _sourcePreviewFrame: SpriteFrame | null = null;
+
+  /** 当前关卡运行时生成的切片，由面板在重玩或关闭时统一销毁。 */
+  private _pieceFrames: SpriteFrame[] = [];
+
+  /** ResManager 持有的当前关卡原图，仅用于创建切片和道具预览。 */
+  private _levelSourceFrame: SpriteFrame | null = null;
+
+  /** 是否正在通过道具查看原图，防止连续点击创建重叠的预览任务。 */
+  private _toolPreviewRunning = false;
+
   /** 节点加载时校验 Prefab 引用并创建第一关。 */
   protected onLoad(): void {
     this.assertRequiredBindings({
@@ -157,12 +222,22 @@ export class UIGamePanel extends UIBase {
       puzzleContainer: this.puzzleContainer,
       piecePrefab: this.piecePrefab,
       sourcePreviewNode: this.sourcePreviewNode,
+      sourcePreviewOverlay: this.sourcePreviewOverlay,
       sourcePreviewSprite: this.sourcePreviewSprite,
       sourcePreviewCountdownLabel: this.sourcePreviewCountdownLabel,
+      timerBarBackground: this.timerBarBackground,
+      timerBarFill: this.timerBarFill,
+      timerLabel: this.timerLabel,
       restartButton: this.restartButton,
       backButton: this.backButton,
+      addTimeToolButton: this.addTimeToolButton,
+      viewSourceToolButton: this.viewSourceToolButton,
+      autoMergeToolButton: this.autoMergeToolButton,
     });
 
+    this.drawTimerBar();
+    this.drawSourcePreviewOverlay();
+    this.resetLevelTimer();
     this.bindEvents();
     void this.createLevel();
   }
@@ -175,12 +250,27 @@ export class UIGamePanel extends UIBase {
       PuzzleLevel001Config.rows * PuzzleLevel001Config.columns;
     this.progressLabel!.string = `已连接 0 / ${totalPieces}`;
     this.feedbackLabel!.string = "拖动相邻图片，让正确边缘靠近";
+    this.refreshTimerDisplay();
     this.bindEvents();
+  }
+
+  /** 正式游戏阶段逐帧扣减时间并平滑刷新进度条。 */
+  protected update(deltaTime: number): void {
+    if (!this._timerRunning || this._completed || this._failed) {
+      return;
+    }
+
+    this._remainingTime = Math.max(0, this._remainingTime - deltaTime);
+    this.refreshTimerDisplay();
+    if (this._remainingTime <= 0) {
+      this.expireLevel();
+    }
   }
 
   /** 面板关闭时注销事件并销毁动态拼图实例。 */
   protected onClose(): void {
     this._levelRequestId += 1;
+    this.stopLevelTimer();
     this.cancelSourcePreviewWait();
     this.hideSourcePreview();
     this.unbindEvents();
@@ -195,6 +285,9 @@ export class UIGamePanel extends UIBase {
     this.hideSourcePreview();
     this.clearPieces();
     this._completed = false;
+    this._failed = false;
+    this._toolPreviewRunning = false;
+    this.resetLevelTimer();
 
     try {
       // 关卡资源按 SpriteFrame 导入，裁切器使用完整底层纹理生成网格运行时切图。
@@ -206,12 +299,18 @@ export class UIGamePanel extends UIBase {
         return;
       }
 
-      // 必须在原图交给预览 Sprite 之前完成裁切，避免预览渲染改变原图的运行时纹理状态。
-      const frames = PuzzleImageSlicer.slice(
+      // 关卡原图必须保持不可变，避免预览渲染后缓存对象被动态图集替换纹理。
+      this.prepareSourceFrame(sourceFrame);
+      this._levelSourceFrame = sourceFrame;
+      this._pieceFrames = PuzzleImageSlicer.slice(
         sourceFrame,
         PuzzleLevel001Config.rows,
         PuzzleLevel001Config.columns,
       );
+      // 运行时切片共享同一张关卡纹理，禁止自动合图可避免重玩时复用旧图集区域。
+      this._pieceFrames.forEach((frame) => {
+        frame.packable = false;
+      });
       await this.showSourcePreview(sourceFrame);
       if (!this.node.isValid || requestId !== this._levelRequestId) {
         return;
@@ -229,7 +328,7 @@ export class UIGamePanel extends UIBase {
         piece.setDisplaySize(UIGamePanel.PIECE_WIDTH, UIGamePanel.PIECE_HEIGHT);
         piece.setData({
           id: pieceId,
-          spriteFrame: frames[pieceId],
+          spriteFrame: this._pieceFrames[pieceId],
           onDragStart: this.onPieceDragStart,
           onDragMove: this.onPieceDragMove,
           onDrop: this.onPieceDrop,
@@ -241,20 +340,42 @@ export class UIGamePanel extends UIBase {
         this._pieceClusterIds.set(pieceId, pieceId);
       });
       this.feedbackLabel!.string = "拖动相邻图片，让正确边缘靠近";
+      this.startLevelTimer();
     } catch (error) {
       if (!this.node.isValid || requestId !== this._levelRequestId) {
         return;
       }
       this.hideSourcePreview();
+      this.clearPieces();
       this.feedbackLabel!.string = "第一关图片加载失败，请查看控制台";
       Logger.error("创建第 1 关拼图失败。", error);
     }
   }
 
-  /** 展示完整原图并等待规定时长，结束后再允许创建拼图。 */
+  /**
+   * 将关卡原图恢复为资源导入时的纹理状态，并禁止后续参与动态图集。
+   *
+   * `_resetDynamicAtlasFrame()` 是 Creator 3.8.4 提供的引擎接口，只在检测到原图
+   * 已被自动合图时调用，用于兼容修改前已经运行过预览的缓存对象。
+   */
+  private prepareSourceFrame(sourceFrame: SpriteFrame): void {
+    if (sourceFrame.original) {
+      sourceFrame._resetDynamicAtlasFrame();
+    }
+    sourceFrame.packable = false;
+  }
+
+  /** 使用独立克隆展示完整原图，等待规定时长后再允许创建拼图。 */
   private async showSourcePreview(sourceFrame: SpriteFrame): Promise<void> {
     this.cancelSourcePreviewWait();
-    this.sourcePreviewSprite!.spriteFrame = sourceFrame;
+
+    if (!this._sourcePreviewFrame) {
+      // 每关只创建一次预览克隆，并关闭自动合图，确保多次查看始终读取同一份正确区域。
+      const previewFrame = sourceFrame.clone();
+      previewFrame.packable = false;
+      this._sourcePreviewFrame = previewFrame;
+    }
+    this.sourcePreviewSprite!.spriteFrame = this._sourcePreviewFrame;
     this.sourcePreviewNode!.active = true;
     this._sourcePreviewRemainingSeconds = UIGamePanel.SOURCE_PREVIEW_DURATION;
     this.refreshSourcePreviewCountdown();
@@ -308,11 +429,241 @@ export class UIGamePanel extends UIBase {
     resolve?.();
   }
 
-  /** 隐藏完整原图预览并释放 SpriteFrame 引用。 */
+  /** 隐藏完整原图预览；专用 SpriteFrame 保留给本关下一次查看继续使用。 */
   private hideSourcePreview(): void {
     this.sourcePreviewNode!.active = false;
     this.sourcePreviewSprite!.spriteFrame = null;
     this.sourcePreviewCountdownLabel!.string = "观察原图";
+  }
+
+  /**
+   * 释放预览专用 SpriteFrame。
+   *
+   * 此函数允许重复调用，只在重玩、关闭面板或关卡创建失败时释放本关专用对象。
+   */
+  private releaseSourcePreviewFrame(): void {
+    if (!this._sourcePreviewFrame) {
+      return;
+    }
+    this._sourcePreviewFrame.destroy();
+    this._sourcePreviewFrame = null;
+  }
+
+  /** 绘制覆盖完整设计分辨率的预览蒙层，突出原图并拦住底层游戏画面。 */
+  private drawSourcePreviewOverlay(): void {
+    this.sourcePreviewOverlay!.clear();
+    this.sourcePreviewOverlay!.fillColor = new Color(12, 16, 22, 210);
+    this.sourcePreviewOverlay!.rect(-320, -568, 640, 1136);
+    this.sourcePreviewOverlay!.fill();
+  }
+
+  /** 绘制进度条固定底色和满格填充，后续只缩放填充节点。 */
+  private drawTimerBar(): void {
+    const halfWidth = UIGamePanel.TIMER_BAR_WIDTH / 2;
+    const halfHeight = UIGamePanel.TIMER_BAR_HEIGHT / 2;
+
+    this.timerBarBackground!.clear();
+    this.timerBarBackground!.fillColor = new Color(48, 56, 68, 220);
+    this.timerBarBackground!.roundRect(
+      -halfWidth,
+      -halfHeight,
+      UIGamePanel.TIMER_BAR_WIDTH,
+      UIGamePanel.TIMER_BAR_HEIGHT,
+      halfHeight,
+    );
+    this.timerBarBackground!.fill();
+
+    this.timerBarFill!.clear();
+    this.timerBarFill!.fillColor = new Color(55, 204, 118, 255);
+    this.timerBarFill!.roundRect(
+      0,
+      -halfHeight,
+      UIGamePanel.TIMER_BAR_WIDTH,
+      UIGamePanel.TIMER_BAR_HEIGHT,
+      halfHeight,
+    );
+    this.timerBarFill!.fill();
+  }
+
+  /** 恢复本关完整时间，但在原图观察阶段不开始扣减。 */
+  private resetLevelTimer(): void {
+    this._timerRunning = false;
+    this._remainingTime = PuzzleLevel001Config.timeLimitSeconds;
+    this.refreshTimerDisplay();
+  }
+
+  /** 原图预览结束且拼图创建完成后开始关卡计时。 */
+  private startLevelTimer(): void {
+    this._timerRunning = true;
+    this._remainingTime = PuzzleLevel001Config.timeLimitSeconds;
+    this.refreshTimerDisplay();
+  }
+
+  /** 停止时间衰减，供完成、失败、重玩和退出流程重复调用。 */
+  private stopLevelTimer(): void {
+    this._timerRunning = false;
+  }
+
+  /** 根据当前剩余比例刷新进度条长度和整秒文本。 */
+  private refreshTimerDisplay(): void {
+    const limit = PuzzleLevel001Config.timeLimitSeconds;
+    const ratio =
+      limit > 0 ? Math.max(0, Math.min(1, this._remainingTime / limit)) : 0;
+    this.timerBarFill!.node.setScale(ratio, 1, 1);
+    this.timerLabel!.string = `${Math.ceil(this._remainingTime)} 秒`;
+  }
+
+  /** 时间归零后锁定所有拼图，并请求控制器确认失败状态。 */
+  private expireLevel(): void {
+    if (!this._timerRunning || this._completed || this._failed) {
+      return;
+    }
+    this._timerRunning = false;
+    this._failed = true;
+    this._pieces.forEach((runtime) => runtime.piece.setInteractable(false));
+    this.feedbackLabel!.string = "时间到，本关失败";
+    EventCenter.emit(GameEvent.PuzzleTimeExpired);
+  }
+
+  /** 判断当前是否处于允许使用游戏道具的正式拼图阶段。 */
+  private canUseGameTool(): boolean {
+    const totalPieces =
+      PuzzleLevel001Config.rows * PuzzleLevel001Config.columns;
+    return (
+      this._timerRunning &&
+      !this._completed &&
+      !this._failed &&
+      !this._toolPreviewRunning &&
+      this._pieces.size === totalPieces
+    );
+  }
+
+  /** 使用增加时间道具，为当前关卡补充固定秒数。 */
+  private onAddTimeTool = (): void => {
+    if (!this.canUseGameTool()) {
+      return;
+    }
+    this._remainingTime += UIGamePanel.TIME_TOOL_BONUS_SECONDS;
+    this.refreshTimerDisplay();
+    this.feedbackLabel!.string = `增加 ${UIGamePanel.TIME_TOOL_BONUS_SECONDS} 秒`;
+  };
+
+  /**
+   * 使用查看原图道具。
+   *
+   * 观察期间暂停关卡计时并锁住拼图，预览结束后恢复原来的剩余时间，
+   * 不重新创建拼图，也不会改变已经完成的组合关系。
+   */
+  private onViewSourceTool = (): void => {
+    if (!this.canUseGameTool() || !this._levelSourceFrame) {
+      return;
+    }
+    void this.runToolSourcePreview(this._levelSourceFrame);
+  };
+
+  /** 执行道具原图预览，并在异步等待结束后恢复本轮游戏状态。 */
+  private async runToolSourcePreview(sourceFrame: SpriteFrame): Promise<void> {
+    const requestId = this._levelRequestId;
+    this._toolPreviewRunning = true;
+    this.stopLevelTimer();
+    this._pieces.forEach((runtime) => runtime.piece.setInteractable(false));
+
+    await this.showSourcePreview(sourceFrame);
+    if (
+      !this.node.isValid ||
+      requestId !== this._levelRequestId ||
+      this._completed ||
+      this._failed
+    ) {
+      return;
+    }
+
+    this._toolPreviewRunning = false;
+    this._pieces.forEach((runtime) => runtime.piece.setInteractable(true));
+    this._timerRunning = true;
+    this.feedbackLabel!.string = "继续拖动相邻图片完成拼接";
+  }
+
+  /** 使用自动组合道具，完成一次正确邻接合并并同步控制器进度。 */
+  private onAutoMergeTool = (): void => {
+    if (!this.canUseGameTool()) {
+      return;
+    }
+
+    const mergedCluster = this.mergeOneAdjacentCluster();
+    if (!mergedCluster) {
+      this.feedbackLabel!.string = "当前没有可自动组合的拼图";
+      return;
+    }
+
+    this.feedbackLabel!.string = "已自动组合 1 块";
+    const request: PuzzlePieceDropRequest = {
+      connectedPieceIds: [...mergedCluster],
+      fromAutoMergeTool: true,
+    };
+    EventCenter.emit(GameEvent.PuzzlePieceDropRequest, request);
+  };
+
+  /**
+   * 按拼图编号顺序寻找一对尚未连接的正确邻块，并完成一次组合合并。
+   *
+   * 自动组合使用与拖拽吸附相同的网格相对位置，合并后仍然是普通组合，
+   * 玩家可以继续拖动其中任意一块带动整个组合。
+   */
+  private mergeOneAdjacentCluster(): Set<number> | null {
+    const pieceIds = [...this._pieces.keys()].sort((a, b) => a - b);
+    for (const movingId of pieceIds) {
+      for (const targetId of pieceIds) {
+        if (
+          movingId >= targetId ||
+          !this._grid.areAdjacent(movingId, targetId)
+        ) {
+          continue;
+        }
+
+        const movingClusterId = this._pieceClusterIds.get(movingId);
+        const targetClusterId = this._pieceClusterIds.get(targetId);
+        if (
+          movingClusterId === undefined ||
+          targetClusterId === undefined ||
+          movingClusterId === targetClusterId
+        ) {
+          continue;
+        }
+
+        const movingCluster = this._clusters.get(movingClusterId);
+        const targetCluster = this._clusters.get(targetClusterId);
+        const movingPiece = this._pieces.get(movingId);
+        const targetPiece = this._pieces.get(targetId);
+        if (!movingCluster || !targetCluster || !movingPiece || !targetPiece) {
+          continue;
+        }
+
+        const relativeOffset = this._grid.getRelativeOffset(
+          movingId,
+          targetId,
+        );
+        const correction = new Vec3(
+          targetPiece.piece.node.position.x +
+            relativeOffset.x -
+            movingPiece.piece.node.position.x,
+          targetPiece.piece.node.position.y +
+            relativeOffset.y -
+            movingPiece.piece.node.position.y,
+          0,
+        );
+        this.moveCluster(movingCluster, correction);
+
+        targetCluster.forEach((pieceId) => {
+          movingCluster.add(pieceId);
+          this._pieceClusterIds.set(pieceId, movingClusterId);
+        });
+        this._clusters.delete(targetClusterId);
+        this.moveClusterWithinBounds(movingCluster, new Vec3());
+        return movingCluster;
+      }
+    }
+    return null;
   }
 
   /**
@@ -332,6 +683,9 @@ export class UIGamePanel extends UIBase {
 
   /** 开始拖动时把当前组合整体提升到其他拼图上方。 */
   private onPieceDragStart = (pieceId: number): void => {
+    if (this._completed || this._failed) {
+      return;
+    }
     const cluster = this.getPieceCluster(pieceId);
     if (!cluster) {
       return;
@@ -347,7 +701,7 @@ export class UIGamePanel extends UIBase {
 
   /** 使用同一份位移增量移动组合内所有拼图，保持已吸附边缘不被拖散。 */
   private onPieceDragMove = (pieceId: number, delta: Vec3): void => {
-    if (this._completed) {
+    if (this._completed || this._failed) {
       return;
     }
     const cluster = this.getPieceCluster(pieceId);
@@ -359,7 +713,7 @@ export class UIGamePanel extends UIBase {
 
   /** 松手时反复吸附附近的正确邻块，并把新组合结果交给控制器统计。 */
   private onPieceDrop = (pieceId: number): void => {
-    if (this._completed) {
+    if (this._completed || this._failed) {
       return;
     }
 
@@ -582,11 +936,16 @@ export class UIGamePanel extends UIBase {
       return;
     }
     this._completed = state.completed;
+    this._failed = state.failed;
+    if (state.completed || state.failed) {
+      this.stopLevelTimer();
+    }
     this.progressLabel!.string = `已连接 ${state.placedCount} / ${state.totalCount}`;
   };
 
   /** 通关后把完整图片移动到界面中心并锁定拖拽。 */
   private onCompleted = (): void => {
+    this.stopLevelTimer();
     const allPieces = new Set(this._pieces.keys());
     const center = this.getClusterCenter(allPieces);
     this.moveCluster(allPieces, new Vec3(-center.x, 20 - center.y, 0));
@@ -610,10 +969,12 @@ export class UIGamePanel extends UIBase {
     return new Vec3((minX + maxX) / 2, (minY + maxY) / 2, 0);
   }
 
-  /** 重新生成当前关卡的全部拼图实例并重置控制器。 */
-  private onRestart = (): void => {
+  /** 按钮请求重新开始当前关卡。 */
+  private onRestart = (): void => EventCenter.emit(GameEvent.PuzzleRestart);
+
+  /** 收到统一重玩事件后重新执行原图预览和拼图创建流程。 */
+  private onRestartRequested = (): void => {
     void this.createLevel();
-    EventCenter.emit(GameEvent.PuzzleRestart);
   };
 
   /** 请求场景返回大厅。 */
@@ -627,8 +988,24 @@ export class UIGamePanel extends UIBase {
     this._eventsBound = true;
     this.restartButton!.node.on(Button.EventType.CLICK, this.onRestart, this);
     this.backButton!.node.on(Button.EventType.CLICK, this.onBack, this);
+    this.addTimeToolButton!.node.on(
+      Button.EventType.CLICK,
+      this.onAddTimeTool,
+      this,
+    );
+    this.viewSourceToolButton!.node.on(
+      Button.EventType.CLICK,
+      this.onViewSourceTool,
+      this,
+    );
+    this.autoMergeToolButton!.node.on(
+      Button.EventType.CLICK,
+      this.onAutoMergeTool,
+      this,
+    );
     EventCenter.on(GameEvent.PuzzleStateChanged, this.onStateChanged, this);
     EventCenter.on(GameEvent.PuzzleCompleted, this.onCompleted, this);
+    EventCenter.on(GameEvent.PuzzleRestart, this.onRestartRequested, this);
   }
 
   /** 注销按钮和拼图状态事件。 */
@@ -639,15 +1016,36 @@ export class UIGamePanel extends UIBase {
     this._eventsBound = false;
     this.restartButton!.node.off(Button.EventType.CLICK, this.onRestart, this);
     this.backButton!.node.off(Button.EventType.CLICK, this.onBack, this);
+    this.addTimeToolButton!.node.off(
+      Button.EventType.CLICK,
+      this.onAddTimeTool,
+      this,
+    );
+    this.viewSourceToolButton!.node.off(
+      Button.EventType.CLICK,
+      this.onViewSourceTool,
+      this,
+    );
+    this.autoMergeToolButton!.node.off(
+      Button.EventType.CLICK,
+      this.onAutoMergeTool,
+      this,
+    );
     EventCenter.off(GameEvent.PuzzleStateChanged, this.onStateChanged, this);
     EventCenter.off(GameEvent.PuzzleCompleted, this.onCompleted, this);
+    EventCenter.off(GameEvent.PuzzleRestart, this.onRestartRequested, this);
   }
 
-  /** 销毁上一轮实例并清空组合关系，避免重玩后残留旧状态。 */
+  /** 销毁上一轮实例和运行时切片，并清空组合关系。 */
   private clearPieces(): void {
     this._pieces.forEach((runtime) => runtime.piece.node.destroy());
     this._pieces.clear();
     this._clusters.clear();
     this._pieceClusterIds.clear();
+    this._pieceFrames.forEach((frame) => frame.destroy());
+    this._pieceFrames = [];
+    this.releaseSourcePreviewFrame();
+    this._levelSourceFrame = null;
+    this._toolPreviewRunning = false;
   }
 }

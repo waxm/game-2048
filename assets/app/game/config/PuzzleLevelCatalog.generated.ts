@@ -17,6 +17,7 @@ const DefaultPuzzleSettings = {
   columns: 3,
   boardWidth: 448,
   boardHeight: 448,
+  timeLimitSeconds: 30,
   pieceOrder: [4, 0, 7, 2, 8, 3, 6, 1, 5],
 } as const;
 
@@ -31,6 +32,7 @@ export const PuzzleLevelConfigs: readonly PuzzleLevelConfig[] =
       columns: DefaultPuzzleSettings.columns,
       boardWidth: DefaultPuzzleSettings.boardWidth,
       boardHeight: DefaultPuzzleSettings.boardHeight,
+      timeLimitSeconds: DefaultPuzzleSettings.timeLimitSeconds,
       pieceOrder: [...DefaultPuzzleSettings.pieceOrder],
     };
   });

@@ -46,6 +46,11 @@ export class PuzzleGameController {
       this,
     );
     EventCenter.off(GameEvent.PuzzleRestart, this.onRestartRequest, this);
+    EventCenter.off(
+      GameEvent.PuzzleTimeExpired,
+      this.onTimeExpiredRequest,
+      this,
+    );
   }
 
   /** 判定拼图落点，并依次派发单块结果、进度和通关事件。 */
@@ -53,16 +58,21 @@ export class PuzzleGameController {
     if (
       !request ||
       !this.arePieceIdsValid(request.connectedPieceIds) ||
-      this._state.completed
+      this._state.completed ||
+      this._state.failed
     ) {
       return;
     }
 
-    // 进度记录历史最大组合：不能累计彼此分离的组合，也不能因新合并的小组合而倒退。
-    this._state.placedCount = Math.max(
-      this._state.placedCount,
-      request.connectedPieceIds.length,
-    );
+    // 自动组合道具按使用次数增加一点；普通拖拽仍记录历史最大组合，避免分离组合重复累计。
+    this._state.placedCount = request.fromAutoMergeTool
+      ? Math.min(this._state.totalCount, this._state.placedCount + 1)
+      : Math.max(this._state.placedCount, request.connectedPieceIds.length);
+
+    // 无论显示进度是多少，只要全部拼图已进入同一组合就应立即完成关卡。
+    if (request.connectedPieceIds.length === this._state.totalCount) {
+      this._state.placedCount = this._state.totalCount;
+    }
     this._state.completed = this._state.placedCount === this._state.totalCount;
 
     const result: PuzzlePieceResult = {
@@ -79,6 +89,16 @@ export class PuzzleGameController {
 
   /** 响应 UI 的重玩请求。 */
   private onRestartRequest = (): void => this.restart();
+
+  /** 时间耗尽时锁定本关状态并通知场景打开失败弹窗。 */
+  private onTimeExpiredRequest = (): void => {
+    if (this._state.completed || this._state.failed) {
+      return;
+    }
+    this._state.failed = true;
+    EventCenter.emit(GameEvent.PuzzleStateChanged, this.getState());
+    EventCenter.emit(GameEvent.PuzzleFailed, this.getState());
+  };
 
   /** 清空完成记录并恢复初始状态。 */
   private restart(): void {
@@ -98,6 +118,11 @@ export class PuzzleGameController {
       this,
     );
     EventCenter.on(GameEvent.PuzzleRestart, this.onRestartRequest, this);
+    EventCenter.on(
+      GameEvent.PuzzleTimeExpired,
+      this.onTimeExpiredRequest,
+      this,
+    );
   }
 
   /** 创建全新的第 1 关状态。 */
@@ -107,6 +132,7 @@ export class PuzzleGameController {
       placedCount: 0,
       totalCount: this._totalPieces,
       completed: false,
+      failed: false,
     };
   }
 

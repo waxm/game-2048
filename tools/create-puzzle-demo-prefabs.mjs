@@ -6,12 +6,16 @@ import path from "node:path";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const prefabDir = path.join(projectRoot, "assets/resources/prefabs/game");
+const popupPrefabDir = path.join(projectRoot, "assets/resources/prefabs/popup");
 const uiLayer = 33554432;
 const panelScriptType = "e6b99/MOTpC9rOJra+XZpqg";
 // 此 ID 来自 Creator 对 PuzzlePiece.ts UUID 的压缩结果，Prefab 反序列化依赖它查找脚本类。
 const pieceScriptType = "ef85cMk1SROQrGG015486DV";
+// 此 ID 来自 Creator 对 UIFailPanel.ts UUID 的实际编译结果。
+const failPanelScriptType = "469e9+YjXZMb6lLQ0nZFBPe";
 const piecePrefabUuid = "9bf31917-81ef-4bb0-ae0f-7f938f0d3573";
 const panelPrefabUuid = "79764185-c340-4a5f-ab8a-ab073eae8f2d";
+const failPanelPrefabUuid = "1a4d02a8-e19b-47f8-aff5-7be3e47b80e0";
 // 第 1 关完整图片为 448×448，Prefab 初始尺寸与运行时 3×3 网格保持一致。
 const level001PieceWidth = 448 / 3;
 const level001PieceHeight = 448 / 3;
@@ -19,9 +23,18 @@ const level001PieceHeight = 448 / 3;
 /** 生成第 1 关需要的两个 Prefab。 */
 function main() {
   fs.mkdirSync(prefabDir, { recursive: true });
+  fs.mkdirSync(popupPrefabDir, { recursive: true });
   writePrefab("PuzzlePiece", createPiecePrefab(), piecePrefabUuid);
   writePrefab("UIGamePanel", createPanelPrefab(), panelPrefabUuid);
-  console.log("Generated PuzzlePiece.prefab and UIGamePanel.prefab");
+  writePrefab(
+    "UIFailPanel",
+    createFailPanelPrefab(),
+    failPanelPrefabUuid,
+    popupPrefabDir,
+  );
+  console.log(
+    "Generated PuzzlePiece.prefab, UIGamePanel.prefab and UIFailPanel.prefab",
+  );
 }
 
 /** 创建单块拼图 Prefab。 */
@@ -115,6 +128,42 @@ function createPanelPrefab() {
     640,
     1136,
   );
+  const timerBarBackgroundNodeId = addNode(
+    objects,
+    "TimerBarBackground",
+    rootId,
+    0,
+    375,
+    448,
+    24,
+  );
+  const timerBarBackgroundId = addGraphics(objects, timerBarBackgroundNodeId);
+  const timerBarFillNodeId = addNode(
+    objects,
+    "TimerBarFill",
+    rootId,
+    -224,
+    375,
+    448,
+    24,
+  );
+  const timerBarFillId = addGraphics(objects, timerBarFillNodeId);
+  const timerLabelNodeId = addNode(
+    objects,
+    "TimerLabel",
+    rootId,
+    0,
+    405,
+    180,
+    36,
+  );
+  const timerLabelId = addLabel(
+    objects,
+    timerLabelNodeId,
+    "30 秒",
+    24,
+    color(255, 255, 255),
+  );
 
   const restart = addButtonWithLabel(
     objects,
@@ -132,22 +181,57 @@ function createPanelPrefab() {
     -245,
     500,
   );
+  const addTimeTool = addTextToolButton(
+    objects,
+    rootId,
+    "AddTimeToolButton",
+    "增加时间 +10秒",
+    -205,
+    -445,
+  );
+  const viewSourceTool = addTextToolButton(
+    objects,
+    rootId,
+    "ViewSourceToolButton",
+    "查看原图 3秒",
+    0,
+    -445,
+  );
+  const autoMergeTool = addTextToolButton(
+    objects,
+    rootId,
+    "AutoMergeToolButton",
+    "自动组合 1块",
+    205,
+    -445,
+  );
   const sourcePreviewNodeId = addNode(
     objects,
     "SourcePreview",
     rootId,
     0,
+    0,
+    640,
+    1136,
+  );
+  const sourcePreviewOverlayId = addGraphics(objects, sourcePreviewNodeId);
+  addBlockInputEvents(objects, sourcePreviewNodeId);
+  const sourcePreviewImageNodeId = addNode(
+    objects,
+    "SourceImage",
+    sourcePreviewNodeId,
+    0,
     20,
     448,
     448,
   );
-  const sourcePreviewSpriteId = addSprite(objects, sourcePreviewNodeId);
+  const sourcePreviewSpriteId = addSprite(objects, sourcePreviewImageNodeId);
   const sourcePreviewLabelNodeId = addNode(
     objects,
     "PreviewLabel",
     sourcePreviewNodeId,
     0,
-    270,
+    290,
     360,
     50,
   );
@@ -175,10 +259,87 @@ function createPanelPrefab() {
       __expectedType__: "cc.Prefab",
     },
     sourcePreviewNode: ref(sourcePreviewNodeId),
+    sourcePreviewOverlay: ref(sourcePreviewOverlayId),
     sourcePreviewSprite: ref(sourcePreviewSpriteId),
     sourcePreviewCountdownLabel: ref(sourcePreviewCountdownLabelId),
+    timerBarBackground: ref(timerBarBackgroundId),
+    timerBarFill: ref(timerBarFillId),
+    timerLabel: ref(timerLabelId),
     restartButton: ref(restart.buttonId),
     backButton: ref(back.buttonId),
+    addTimeToolButton: ref(addTimeTool.buttonId),
+    viewSourceToolButton: ref(viewSourceTool.buttonId),
+    autoMergeToolButton: ref(autoMergeTool.buttonId),
+    _id: "",
+  });
+  objects[rootId]._components.push(ref(scriptId));
+  attachPrefabInfos(objects);
+  return objects;
+}
+
+/** 创建拼图超时失败弹窗 Prefab。 */
+function createFailPanelPrefab() {
+  const objects = [createPrefabAsset("UIFailPanel")];
+  const rootId = addNode(objects, "UIFailPanel", null, 0, 0, 640, 1136);
+  const overlayGraphicsId = addGraphics(objects, rootId);
+  addBlockInputEvents(objects, rootId);
+
+  const panelNodeId = addNode(objects, "Panel", rootId, 0, 0, 500, 380);
+  const panelGraphicsId = addGraphics(objects, panelNodeId);
+  const titleNodeId = addNode(objects, "TitleLabel", rootId, 0, 115, 360, 60);
+  const titleLabelId = addLabel(
+    objects,
+    titleNodeId,
+    "挑战失败",
+    42,
+    color(224, 70, 70),
+  );
+  const messageNodeId = addNode(
+    objects,
+    "MessageLabel",
+    rootId,
+    0,
+    52,
+    420,
+    48,
+  );
+  const messageLabelId = addLabel(
+    objects,
+    messageNodeId,
+    "时间已经用完，再试一次吧",
+    24,
+    color(62, 70, 82),
+  );
+  const retry = addGraphicsButton(
+    objects,
+    rootId,
+    "RetryButton",
+    "重玩",
+    0,
+    -45,
+  );
+  const home = addGraphicsButton(
+    objects,
+    rootId,
+    "HomeButton",
+    "返回首页",
+    0,
+    -130,
+  );
+  const scriptId = addObject(objects, {
+    __type__: failPanelScriptType,
+    _name: "",
+    _objFlags: 0,
+    node: ref(rootId),
+    _enabled: true,
+    overlayGraphics: ref(overlayGraphicsId),
+    panelGraphics: ref(panelGraphicsId),
+    titleLabel: ref(titleLabelId),
+    messageLabel: ref(messageLabelId),
+    retryButton: ref(retry.buttonId),
+    retryButtonGraphics: ref(retry.graphicsId),
+    homeButton: ref(home.buttonId),
+    homeButtonGraphics: ref(home.graphicsId),
     _id: "",
   });
   objects[rootId]._components.push(ref(scriptId));
@@ -193,6 +354,25 @@ function addButtonWithLabel(objects, parentId, name, text, x, y) {
   const labelNodeId = addNode(objects, "Label", nodeId, 0, 0, 100, 50);
   addLabel(objects, labelNodeId, text, 28, color(120, 190, 255));
   return { nodeId, buttonId };
+}
+
+/** 添加底部文字道具按钮；当前没有正式图片，只保留文字和点击区域。 */
+function addTextToolButton(objects, parentId, name, text, x, y) {
+  const nodeId = addNode(objects, name, parentId, x, y, 190, 64);
+  const buttonId = addButton(objects, nodeId);
+  const labelNodeId = addNode(objects, "Label", nodeId, 0, 0, 186, 56);
+  addLabel(objects, labelNodeId, text, 22, color(120, 205, 255));
+  return { nodeId, buttonId };
+}
+
+/** 添加由 Graphics 绘制背景的文字按钮。 */
+function addGraphicsButton(objects, parentId, name, text, x, y) {
+  const nodeId = addNode(objects, name, parentId, x, y, 200, 68);
+  const graphicsId = addGraphics(objects, nodeId);
+  const buttonId = addButton(objects, nodeId);
+  const labelNodeId = addNode(objects, "Label", nodeId, 0, 0, 180, 56);
+  addLabel(objects, labelNodeId, text, 28, color(255, 255, 255));
+  return { nodeId, graphicsId, buttonId };
 }
 
 /** 添加节点及其 UITransform。 */
@@ -275,6 +455,44 @@ function addSprite(objects, nodeId) {
   return componentId;
 }
 
+/** 添加运行时绘制矩形和进度条的 Graphics 组件。 */
+function addGraphics(objects, nodeId) {
+  const componentId = addObject(objects, {
+    __type__: "cc.Graphics",
+    _name: "",
+    _objFlags: 0,
+    node: ref(nodeId),
+    _enabled: true,
+    _customMaterial: null,
+    _srcBlendFactor: 2,
+    _dstBlendFactor: 4,
+    _color: color(255, 255, 255),
+    _lineWidth: 1,
+    _strokeColor: color(0, 0, 0),
+    _lineJoin: 0,
+    _lineCap: 0,
+    _fillColor: color(255, 255, 255),
+    _miterLimit: 10,
+    _id: "",
+  });
+  objects[nodeId]._components.push(ref(componentId));
+  return componentId;
+}
+
+/** 添加全屏输入拦截组件，避免弹窗显示时继续拖动底层拼图。 */
+function addBlockInputEvents(objects, nodeId) {
+  const componentId = addObject(objects, {
+    __type__: "cc.BlockInputEvents",
+    _name: "",
+    _objFlags: 0,
+    node: ref(nodeId),
+    _enabled: true,
+    _id: "",
+  });
+  objects[nodeId]._components.push(ref(componentId));
+  return componentId;
+}
+
 /** 添加缩放反馈按钮。 */
 function addButton(objects, nodeId) {
   const componentId = addObject(objects, {
@@ -319,9 +537,9 @@ function attachPrefabInfos(objects) {
 }
 
 /** 写入 Prefab 和对应 meta。 */
-function writePrefab(name, objects, uuid) {
+function writePrefab(name, objects, uuid, outputDir = prefabDir) {
   validatePrefab(name, objects);
-  const prefabPath = path.join(prefabDir, `${name}.prefab`);
+  const prefabPath = path.join(outputDir, `${name}.prefab`);
   fs.writeFileSync(prefabPath, `${JSON.stringify(objects, null, 2)}\n`, "utf8");
   fs.writeFileSync(
     `${prefabPath}.meta`,
@@ -379,8 +597,15 @@ function validatePrefab(name, objects) {
     });
   });
 
-  const expectedScriptType =
-    name === "UIGamePanel" ? panelScriptType : pieceScriptType;
+  const expectedScriptTypes = {
+    UIGamePanel: panelScriptType,
+    PuzzlePiece: pieceScriptType,
+    UIFailPanel: failPanelScriptType,
+  };
+  const expectedScriptType = expectedScriptTypes[name];
+  if (!expectedScriptType) {
+    throw new Error(`${name} 没有配置业务脚本类型。`);
+  }
   if (!objects.some((object) => object?.__type__ === expectedScriptType)) {
     throw new Error(`${name} 缺少业务脚本组件 ${expectedScriptType}。`);
   }

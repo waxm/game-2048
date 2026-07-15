@@ -1,173 +1,157 @@
-import {
-    _decorator,
-    Button,
-    Node,
-    Sprite,
-    SpriteFrame,
-    UITransform,
-    Vec3,
-    resources,
-} from "cc";
+import { _decorator, Button, Color, Graphics, Label } from "cc";
+import { EventCenter } from "../../core/event/EventCenter";
 import { UIBase } from "../../core/ui/UIBase";
+import { GameEvent } from "../../game/GameEvent";
 
 const { ccclass, property } = _decorator;
 
-/**
- * 蓝湖“失败”界面初版绑定脚本。
- *
- * 当前蓝湖只拿到了整张合成图，暂时用整图作为参考背景，
- * 并额外生成可绑定的关闭与再次挑战点击区域。
- */
+/** 拼图关卡超时后的失败弹窗。 */
 @ccclass("UIFailPanel")
 export class UIFailPanel extends UIBase {
-    @property({ type: Sprite })
-    public lanhuReferenceImg: Sprite | null = null;
+  /** 全屏半透明遮罩。 */
+  @property({ type: Graphics })
+  public overlayGraphics: Graphics | null = null;
 
-    @property({ type: Button })
-    public closeBtn: Button | null = null;
+  /** 弹窗主体背景。 */
+  @property({ type: Graphics })
+  public panelGraphics: Graphics | null = null;
 
-    @property({ type: Button })
-    public retryBtn: Button | null = null;
+  /** 失败标题。 */
+  @property({ type: Label })
+  public titleLabel: Label | null = null;
 
-    private _viewBuilt = false;
+  /** 失败原因说明。 */
+  @property({ type: Label })
+  public messageLabel: Label | null = null;
 
-    private _eventsBound = false;
+  /** 重新挑战按钮。 */
+  @property({ type: Button })
+  public retryButton: Button | null = null;
 
-    protected onOpen(params?: unknown): void {
-        super.onOpen(params);
-        this.buildView();
-        this.bindEvents();
-        this.loadLanhuReference();
+  /** 重新挑战按钮背景。 */
+  @property({ type: Graphics })
+  public retryButtonGraphics: Graphics | null = null;
+
+  /** 返回首页按钮。 */
+  @property({ type: Button })
+  public homeButton: Button | null = null;
+
+  /** 返回首页按钮背景。 */
+  @property({ type: Graphics })
+  public homeButtonGraphics: Graphics | null = null;
+
+  /** 是否已经注册按钮事件。 */
+  private _eventsBound = false;
+
+  /** 校验 Prefab 绑定、绘制固定背景并注册按钮。 */
+  protected onLoad(): void {
+    this.assertRequiredBindings({
+      overlayGraphics: this.overlayGraphics,
+      panelGraphics: this.panelGraphics,
+      titleLabel: this.titleLabel,
+      messageLabel: this.messageLabel,
+      retryButton: this.retryButton,
+      retryButtonGraphics: this.retryButtonGraphics,
+      homeButton: this.homeButton,
+      homeButtonGraphics: this.homeButtonGraphics,
+    });
+    this.drawView();
+    this.bindEvents();
+  }
+
+  /** 打开弹窗时刷新失败文案并确保按钮事件有效。 */
+  protected onOpen(params?: unknown): void {
+    super.onOpen(params);
+    this.titleLabel!.string = "挑战失败";
+    this.messageLabel!.string = "时间已经用完，再试一次吧";
+    this.bindEvents();
+  }
+
+  /** 关闭弹窗时注销按钮事件。 */
+  protected onClose(): void {
+    this.unbindEvents();
+    super.onClose();
+  }
+
+  /** 绘制遮罩、弹窗底板和两个按钮的固定外观。 */
+  private drawView(): void {
+    this.drawRoundedRect(
+      this.overlayGraphics!,
+      -320,
+      -568,
+      640,
+      1136,
+      0,
+      new Color(16, 18, 22, 210),
+    );
+    this.drawRoundedRect(
+      this.panelGraphics!,
+      -250,
+      -190,
+      500,
+      380,
+      8,
+      new Color(245, 247, 250, 255),
+    );
+    this.drawRoundedRect(
+      this.retryButtonGraphics!,
+      -100,
+      -34,
+      200,
+      68,
+      8,
+      new Color(45, 127, 249, 255),
+    );
+    this.drawRoundedRect(
+      this.homeButtonGraphics!,
+      -100,
+      -34,
+      200,
+      68,
+      8,
+      new Color(91, 101, 116, 255),
+    );
+  }
+
+  /** 使用指定 Graphics 绘制单色圆角矩形。 */
+  private drawRoundedRect(
+    graphics: Graphics,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number,
+    color: Color,
+  ): void {
+    graphics.clear();
+    graphics.fillColor = color;
+    graphics.roundRect(x, y, width, height, radius);
+    graphics.fill();
+  }
+
+  /** 注册重玩和返回首页按钮；重复调用不会重复绑定。 */
+  private bindEvents(): void {
+    if (this._eventsBound) {
+      return;
     }
+    this._eventsBound = true;
+    this.retryButton!.node.on(Button.EventType.CLICK, this.onRetry, this);
+    this.homeButton!.node.on(Button.EventType.CLICK, this.onHome, this);
+  }
 
-    protected onClose(): void {
-        this.unbindEvents();
-        super.onClose();
+  /** 注销失败弹窗按钮事件；允许重复调用。 */
+  private unbindEvents(): void {
+    if (!this._eventsBound) {
+      return;
     }
+    this._eventsBound = false;
+    this.retryButton!.node.off(Button.EventType.CLICK, this.onRetry, this);
+    this.homeButton!.node.off(Button.EventType.CLICK, this.onHome, this);
+  }
 
-    private buildView(): void {
-        if (this._viewBuilt) {
-            return;
-        }
+  /** 请求重新开始当前关卡。 */
+  private onRetry = (): void => EventCenter.emit(GameEvent.PuzzleRestart);
 
-        this._viewBuilt = true;
-        this.node.name = "UIFailPanel";
-        this.ensureTransform(this.node, 640, 1136);
-
-        const referenceNode = this.createChild(
-            "LanhuReferenceImg",
-            0,
-            0,
-            640,
-            1456,
-        );
-        this.lanhuReferenceImg = referenceNode.addComponent(Sprite);
-
-        this.closeBtn = this.createButtonHitArea("CloseBtn", 270, 263, 76, 76);
-        this.retryBtn = this.createButtonHitArea(
-            "RetryBtn",
-            -4,
-            -252,
-            260,
-            110,
-        );
-    }
-
-    private bindEvents(): void {
-        if (this._eventsBound) {
-            return;
-        }
-
-        this._eventsBound = true;
-        this.closeBtn?.node.on(
-            Button.EventType.CLICK,
-            this.onCloseBtnClick,
-            this,
-        );
-        this.retryBtn?.node.on(
-            Button.EventType.CLICK,
-            this.onRetryBtnClick,
-            this,
-        );
-    }
-
-    private unbindEvents(): void {
-        if (!this._eventsBound) {
-            return;
-        }
-
-        this._eventsBound = false;
-        this.closeBtn?.node.off(
-            Button.EventType.CLICK,
-            this.onCloseBtnClick,
-            this,
-        );
-        this.retryBtn?.node.off(
-            Button.EventType.CLICK,
-            this.onRetryBtnClick,
-            this,
-        );
-    }
-
-    private loadLanhuReference(): void {
-        if (!this.lanhuReferenceImg || this.lanhuReferenceImg.spriteFrame) {
-            return;
-        }
-
-        resources.load(
-            "textures/popup/fail-panel/spriteFrame",
-            SpriteFrame,
-            (error, spriteFrame) => {
-                if (error || !spriteFrame || !this.lanhuReferenceImg) {
-                    return;
-                }
-
-                this.lanhuReferenceImg.spriteFrame = spriteFrame;
-            },
-        );
-    }
-
-    private createButtonHitArea(
-        name: string,
-        x: number,
-        y: number,
-        width: number,
-        height: number,
-    ): Button {
-        const node = this.createChild(name, x, y, width, height);
-        return node.addComponent(Button);
-    }
-
-    private createChild(
-        name: string,
-        x: number,
-        y: number,
-        width: number,
-        height: number,
-    ): Node {
-        const node = new Node(name);
-        node.setPosition(new Vec3(x, y, 0));
-        this.ensureTransform(node, width, height);
-        this.node.addChild(node);
-        return node;
-    }
-
-    private ensureTransform(
-        node: Node,
-        width: number,
-        height: number,
-    ): UITransform {
-        const transform =
-            node.getComponent(UITransform) ?? node.addComponent(UITransform);
-        transform.setContentSize(width, height);
-        return transform;
-    }
-
-    private onCloseBtnClick(): void {
-        // TODO: 绑定关闭失败面板逻辑。
-    }
-
-    private onRetryBtnClick(): void {
-        // TODO: 绑定再次挑战逻辑。
-    }
+  /** 请求离开游戏并返回首页场景。 */
+  private onHome = (): void => EventCenter.emit(GameEvent.BackToLobby);
 }

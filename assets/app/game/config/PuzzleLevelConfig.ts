@@ -18,6 +18,9 @@ export interface PuzzleLevelConfig {
   /** 完整拼图在游戏界面中的显示高度。 */
   boardHeight: number;
 
+  /** 进入正式拼图阶段后的限时秒数，不包含原图观察时间。 */
+  timeLimitSeconds: number;
+
   /** 生成时的拼图块展示顺序。 */
   pieceOrder: number[];
 }

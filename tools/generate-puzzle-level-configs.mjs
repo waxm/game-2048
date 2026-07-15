@@ -24,6 +24,7 @@ const defaultSettings = {
   columns: 3,
   boardWidth: 448,
   boardHeight: 448,
+  timeLimitSeconds: 30,
   pieceOrder: [4, 0, 7, 2, 8, 3, 6, 1, 5],
 };
 
@@ -74,7 +75,7 @@ function createCatalogSource(levelNumbers) {
     .map((line, index) => (index === 0 ? line : `    ${line}`))
     .join("\n");
 
-  return `// 本文件由 tools/generate-puzzle-level-configs.mjs 自动生成，请勿手工维护资源路径。\n\nimport type { PuzzleLevelConfig } from "./PuzzleLevelConfig";\n\n/** 当前资源目录中实际存在的关卡编号。 */\nexport const PuzzleLevelNumbers = ${JSON.stringify(levelNumbers)} as const;\n\n/** 所有关卡共用的默认网格参数，后续可扩展为按难度覆盖。 */\nconst DefaultPuzzleSettings = ${settings} as const;\n\n/** 当前已经生成资源配置的全部拼图关卡。 */\nexport const PuzzleLevelConfigs: readonly PuzzleLevelConfig[] = PuzzleLevelNumbers.map(\n    (level) => {\n        const levelName = "level_" + ("000" + level).slice(-3);\n        return {\n            level,\n            sourceImagePath: \`textures/game/levels/\${levelName}/\${levelName}_source/spriteFrame\`,\n            rows: DefaultPuzzleSettings.rows,\n            columns: DefaultPuzzleSettings.columns,\n            boardWidth: DefaultPuzzleSettings.boardWidth,\n            boardHeight: DefaultPuzzleSettings.boardHeight,\n            pieceOrder: [...DefaultPuzzleSettings.pieceOrder],\n        };\n    },\n);\n\n/** 关卡编号到配置对象的只读索引。 */\nconst PuzzleLevelConfigMap = new Map(\n    PuzzleLevelConfigs.map((config) => [config.level, config]),\n);\n\n/** 根据关卡编号读取配置，不存在对应图片时返回 null。 */\nexport function getPuzzleLevelConfig(level: number): PuzzleLevelConfig | null {\n    return PuzzleLevelConfigMap.get(level) ?? null;\n}\n\n/** 当前 Demo 使用的第一关配置。 */\nexport const PuzzleLevel001Config = PuzzleLevelConfigMap.get(1)!;\n`;
+  return `// 本文件由 tools/generate-puzzle-level-configs.mjs 自动生成，请勿手工维护资源路径。\n\nimport type { PuzzleLevelConfig } from "./PuzzleLevelConfig";\n\n/** 当前资源目录中实际存在的关卡编号。 */\nexport const PuzzleLevelNumbers = ${JSON.stringify(levelNumbers)} as const;\n\n/** 所有关卡共用的默认网格参数，后续可扩展为按难度覆盖。 */\nconst DefaultPuzzleSettings = ${settings} as const;\n\n/** 当前已经生成资源配置的全部拼图关卡。 */\nexport const PuzzleLevelConfigs: readonly PuzzleLevelConfig[] = PuzzleLevelNumbers.map(\n    (level) => {\n        const levelName = "level_" + ("000" + level).slice(-3);\n        return {\n            level,\n            sourceImagePath: \`textures/game/levels/\${levelName}/\${levelName}_source/spriteFrame\`,\n            rows: DefaultPuzzleSettings.rows,\n            columns: DefaultPuzzleSettings.columns,\n            boardWidth: DefaultPuzzleSettings.boardWidth,\n            boardHeight: DefaultPuzzleSettings.boardHeight,\n            timeLimitSeconds: DefaultPuzzleSettings.timeLimitSeconds,\n            pieceOrder: [...DefaultPuzzleSettings.pieceOrder],\n        };\n    },\n);\n\n/** 关卡编号到配置对象的只读索引。 */\nconst PuzzleLevelConfigMap = new Map(\n    PuzzleLevelConfigs.map((config) => [config.level, config]),\n);\n\n/** 根据关卡编号读取配置，不存在对应图片时返回 null。 */\nexport function getPuzzleLevelConfig(level: number): PuzzleLevelConfig | null {\n    return PuzzleLevelConfigMap.get(level) ?? null;\n}\n\n/** 当前 Demo 使用的第一关配置。 */\nexport const PuzzleLevel001Config = PuzzleLevelConfigMap.get(1)!;\n`;
 }
 
 main();
