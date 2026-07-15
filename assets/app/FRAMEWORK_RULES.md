@@ -16,7 +16,13 @@ assets/
     core/              # 所有游戏都可以复用的框架代码
     game/              # 当前游戏的业务逻辑
     modules/           # 可复用的玩法模块或功能模块
-    ui/                # UI 脚本和 UI 辅助工具
+    ui/                # 按功能模块分类的 UI 脚本和 UI 辅助工具
+      common/          # 通用 UI
+      home/            # 首页和大厅 UI
+      game/            # 游戏内面板和玩法显示组件
+      popup/           # 独立弹窗
+      item/            # 列表项和可复用小组件
+      lanhu/           # 蓝湖工具生成的 UI 脚本
     config/            # 本地配置文件
     data/              # 运行时数据和存档模型
     audio/             # 音频定义和音频封装
@@ -48,6 +54,46 @@ assets/resources/prefabs/
 - 不要把新增 Prefab 直接放在 `assets/resources/prefabs` 根目录。
 - 加载路径必须包含模块目录，例如首页 Prefab 使用 `prefabs/home/UIHomePanel`。
 - 蓝湖转换生成的 Prefab 统一使用 `prefabs/lanhu/` 路径，避免与手工制作的业务 Prefab 混放。
+
+## UI 代码目录规范
+
+UI TypeScript 脚本必须在 `assets/app/ui` 下按功能模块分类，禁止统一堆放到 `ui/panels`：
+
+```text
+assets/app/ui/
+  common/               # 通用 UI
+  home/                 # 首页和大厅 UI
+  game/                 # 游戏内 UI 和玩法显示组件
+  popup/                # 独立弹窗
+  item/                 # 列表项和可复用小组件
+  lanhu/                # 蓝湖工具生成的 UI 脚本
+```
+
+- UI 脚本和手工 Prefab 应尽量使用相同模块目录，例如 `ui/game/UIGamePanel.ts` 对应 `prefabs/game/UIGamePanel.prefab`。
+- 蓝湖生成脚本和 Prefab 分别放在 `ui/lanhu`、`prefabs/lanhu`。
+- 移动已经绑定 Prefab 的脚本时，必须同时移动其 `.meta` 文件，禁止重新生成 UUID。
+- 新增模块可以创建语义明确的新目录，但不能重新建立收纳所有面板的 `panels` 目录。
+
+## Texture 目录规范
+
+动态加载和 Prefab 使用的图片统一放在 `assets/resources/textures`，并与 UI、Prefab 使用同一套模块名：
+
+```text
+assets/resources/textures/
+  common/               # 通用图片
+  home/                 # 首页和大厅图片
+  game/                 # 游戏内图片和关卡原图
+    levels/             # 按关卡继续分类的整图资源
+  popup/                # 弹窗图片
+  item/                 # 列表项和小组件图片
+  lanhu/                # 蓝湖 Prefab 使用的切图
+```
+
+- 不允许把新增图片直接放在 `assets/resources` 或 `assets/resources/textures` 根目录。
+- 代码、Prefab 和 Texture 的模块归属应保持一致；通用资源必须进入 `common`。
+- 加载路径必须包含模块目录，例如关卡图使用 `textures/game/levels/level_001/level_001_source/spriteFrame`。
+- 移动图片时必须同时移动 `.meta`，保持 Texture 和 SpriteFrame UUID 不变；有动态加载代码时同步修改路径。
+- 蓝湖生成工具必须把切图写入 `textures/lanhu`，不能恢复旧的 `resources/lanhu` 目录。
 
 ## Prefab 节点绑定与校验
 
@@ -175,7 +221,7 @@ assets/scene/Game.scene        # 挂 GameScene
 - 框架级通用能力放到 `app/core`。
 - 当前游戏专属逻辑放到 `app/game`。
 - 可复用功能模块放到 `app/modules`。
-- UI 脚本放到 `app/ui`。
+- UI 脚本放到 `app/ui`，并继续按 `common`、`home`、`game`、`popup`、`item`、`lanhu` 等模块分类。
 - 场景脚本放到 `app/scenes`。
 
 ## 注释规则

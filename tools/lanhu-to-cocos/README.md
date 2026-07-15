@@ -2,6 +2,8 @@
 
 本目录用于保存蓝湖 UI 转 Cocos Creator prefab 的本地工具和生成记录。
 
+蓝湖切图统一生成到 `assets/resources/textures/lanhu`，不再直接放在 `assets/resources/lanhu`。
+
 ## 当前恢复状态
 
 2026-07-14 已从蓝湖资源重新恢复以下产物：
@@ -12,10 +14,10 @@
 - `assets/resources/prefabs/lanhu/UIUpgradePanel.prefab`
 - `assets/resources/prefabs/lanhu/UIVisitFriendsPanel.prefab`
 - `assets/resources/prefabs/lanhu/UIVisitFriendItem.prefab`
-- `assets/app/ui/panels/UIRenameConfirmPanel.ts`
-- `assets/app/ui/panels/UIRenamePanel.ts`
-- `assets/app/ui/panels/UIVisitFriendsPanel.ts`
-- `assets/app/ui/panels/UIVisitFriendItem.ts`
+- `assets/app/ui/lanhu/UIRenameConfirmPanel.ts`
+- `assets/app/ui/lanhu/UIRenamePanel.ts`
+- `assets/app/ui/lanhu/UIVisitFriendsPanel.ts`
+- `assets/app/ui/lanhu/UIVisitFriendItem.ts`
 
 ## 已恢复规则
 
@@ -32,7 +34,7 @@
 ```bash
 git -C /Users/huafang/Work/Work_AI status --short
 find /Users/huafang/Work/Work_AI/assets/resources/prefabs/lanhu -maxdepth 1 -type f
-find /Users/huafang/Work/Work_AI/assets/app/ui/panels -maxdepth 1 -type f -name 'UI*.ts'
+find /Users/huafang/Work/Work_AI/assets/app/ui/lanhu -maxdepth 1 -type f -name 'UI*.ts'
 ```
 
 然后重新从蓝湖 MCP 拉取切图并生成 prefab。

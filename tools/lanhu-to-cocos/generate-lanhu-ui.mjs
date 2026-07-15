@@ -17,7 +17,7 @@ function main() {
     const projectRoot = findProjectRoot(process.cwd());
     const spec = readJson(path.resolve(process.cwd(), inputPath));
     const normalized = normalizeSpec(spec);
-    const outputDir = path.join(projectRoot, "assets/app/ui/panels");
+    const outputDir = path.join(projectRoot, "assets/app/ui/lanhu");
     const outputPath = path.join(outputDir, `${normalized.name}.ts`);
 
     fs.mkdirSync(outputDir, { recursive: true });

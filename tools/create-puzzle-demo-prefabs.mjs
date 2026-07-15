@@ -73,7 +73,7 @@ function createPanelPrefab() {
     const progressLabelId = addLabel(
         objects,
         progressNodeId,
-        "已完成 0 / 4",
+        "已连接 0 / 9",
         26,
         color(190, 220, 255),
     );
@@ -89,7 +89,7 @@ function createPanelPrefab() {
     const feedbackLabelId = addLabel(
         objects,
         feedbackNodeId,
-        "拖动四块图片，拼回完整原图",
+        "拖动相邻图片，让正确边缘靠近",
         24,
         color(255, 225, 120),
     );
@@ -102,32 +102,6 @@ function createPanelPrefab() {
         640,
         1136,
     );
-
-    const slotPositions = [
-        [-97, 270],
-        [97, 270],
-        [-97, 72],
-        [97, 72],
-    ];
-    const slotNodeIds = slotPositions.map(([x, y], index) => {
-        const slotId = addNode(
-            objects,
-            `Slot_${index}`,
-            puzzleContainerId,
-            x,
-            y,
-            190,
-            190,
-        );
-        addLabel(
-            objects,
-            slotId,
-            `目标 ${index + 1}`,
-            22,
-            color(115, 125, 140),
-        );
-        return slotId;
-    });
 
     const restart = addButtonWithLabel(
         objects,
@@ -155,7 +129,6 @@ function createPanelPrefab() {
         progressLabel: ref(progressLabelId),
         feedbackLabel: ref(feedbackLabelId),
         puzzleContainer: ref(puzzleContainerId),
-        slotNodes: slotNodeIds.map(ref),
         piecePrefab: {
             __uuid__: piecePrefabUuid,
             __expectedType__: "cc.Prefab",
@@ -284,15 +257,18 @@ function attachPrefabInfos(objects) {
         .map((item, index) => (item.__type__ === "cc.Node" ? index : -1))
         .filter((index) => index >= 0);
     for (const nodeId of nodeIds) {
+        // fileId 根据 Prefab、节点索引和节点名稳定生成，重复执行工具不会产生无意义变化。
+        const fileId = crypto
+            .createHash("sha1")
+            .update(`${objects[0]._name}:${nodeId}:${objects[nodeId]._name}`)
+            .digest("base64")
+            .replace(/[=+/]/g, "")
+            .slice(0, 22);
         const infoId = addObject(objects, {
             __type__: "cc.PrefabInfo",
             root: ref(nodeId),
             asset: ref(0),
-            fileId: crypto
-                .randomBytes(16)
-                .toString("base64")
-                .replace(/[=+/]/g, "")
-                .slice(0, 22),
+            fileId,
         });
         objects[nodeId]._prefab = ref(infoId);
     }
@@ -300,6 +276,7 @@ function attachPrefabInfos(objects) {
 
 /** 写入 Prefab 和对应 meta。 */
 function writePrefab(name, objects, uuid) {
+    validatePrefab(name, objects);
     const prefabPath = path.join(prefabDir, `${name}.prefab`);
     fs.writeFileSync(
         prefabPath,
@@ -323,6 +300,50 @@ function writePrefab(name, objects, uuid) {
         )}\n`,
         "utf8",
     );
+}
+
+/**
+ * 在写入磁盘前校验序列化结构。
+ *
+ * 生成工具必须尽早阻止越界引用、错误父子关系和业务脚本缺失，避免把损坏文件交给 Creator 导入。
+ */
+function validatePrefab(name, objects) {
+    const visit = (value, fieldPath) => {
+        if (!value || typeof value !== "object") {
+            return;
+        }
+        if (Number.isInteger(value.__id__)) {
+            if (value.__id__ < 0 || value.__id__ >= objects.length) {
+                throw new Error(
+                    `${name}.${fieldPath} 包含无效 __id__：${value.__id__}`,
+                );
+            }
+        }
+        Object.entries(value).forEach(([key, child]) =>
+            visit(child, `${fieldPath}.${key}`),
+        );
+    };
+    visit(objects, "root");
+
+    objects.forEach((object, objectId) => {
+        if (object?.__type__ !== "cc.Node") {
+            return;
+        }
+        object._children.forEach((childRef) => {
+            const child = objects[childRef.__id__];
+            if (child?._parent?.__id__ !== objectId) {
+                throw new Error(
+                    `${name}.${child?._name ?? childRef.__id__} 父子关系不一致。`,
+                );
+            }
+        });
+    });
+
+    const expectedScriptType =
+        name === "UIGamePanel" ? panelScriptType : pieceScriptType;
+    if (!objects.some((object) => object?.__type__ === expectedScriptType)) {
+        throw new Error(`${name} 缺少业务脚本组件 ${expectedScriptType}。`);
+    }
 }
 
 /** 创建 Prefab 资源头。 */

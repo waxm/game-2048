@@ -26,7 +26,8 @@ export interface PuzzleLevelConfig {
 export const PuzzleLevel001Config: PuzzleLevelConfig = {
     level: 1,
     // Creator 3.x 的图片会生成 spriteFrame 子资源，动态加载时必须明确写出子资源名。
-    sourceImagePath: "textures/levels/level_001/level_001_source/spriteFrame",
+    sourceImagePath:
+        "textures/game/levels/level_001/level_001_source/spriteFrame",
     rows: 3,
     columns: 3,
     pieceOrder: [4, 0, 7, 2, 8, 3, 6, 1, 5],

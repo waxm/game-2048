@@ -43,7 +43,7 @@ async function main() {
         visitFriendsDialog: args.visitFriendsDialog,
     });
     if (args.dialogOnly || args.renameDialog || args.visitFriendsDialog) {
-        fs.rmSync(path.join(projectRoot, "assets/resources/lanhu", slug, "slices"), { recursive: true, force: true });
+        fs.rmSync(path.join(projectRoot, "assets/resources/textures/lanhu", slug, "slices"), { recursive: true, force: true });
     }
     await generateImageAssets(spec, projectRoot);
     await downloadSlices(spec, projectRoot);
@@ -54,7 +54,7 @@ async function main() {
 
     if (args.visitFriendsDialog) {
         const itemSpec = createVisitFriendItemSpec(data, "UIVisitFriendItem", "visit-friend-item", spec.rawCanvas, spec.scale, spec.contentHeight, { visitFriendItem: true });
-        fs.rmSync(path.join(projectRoot, "assets/resources/lanhu", itemSpec.slug, "slices"), { recursive: true, force: true });
+        fs.rmSync(path.join(projectRoot, "assets/resources/textures/lanhu", itemSpec.slug, "slices"), { recursive: true, force: true });
         await generateImageAssets(itemSpec, projectRoot);
         await downloadSlices(itemSpec, projectRoot);
         const itemPrefabPath = path.join(projectRoot, "assets/resources/prefabs/lanhu", `${itemSpec.panelName}.prefab`);
@@ -144,7 +144,7 @@ function normalizeSlices(data, panelName, slug, options = {}) {
                 sourceName: slice.name,
                 layerPath: slice.layer_path || "",
                 downloadUrl: slice.scale_urls?.["2x"] || slice.download_url,
-                assetPath: `assets/resources/lanhu/${slug}/slices/${fileName}`,
+                assetPath: `assets/resources/textures/lanhu/${slug}/slices/${fileName}`,
                 x,
                 y,
                 width,
@@ -354,7 +354,7 @@ function createRemoteImageNode(name, downloadUrl, slug, left, top, width, height
         name,
         type: "image",
         downloadUrl,
-        assetPath: `assets/resources/lanhu/${slug}/slices/${toSlug(name)}.png`,
+        assetPath: `assets/resources/textures/lanhu/${slug}/slices/${toSlug(name)}.png`,
         x: round((left + width / 2) * scale - PROJECT_SIZE.width / 2),
         y: round(contentHeight / 2 - (top + height / 2) * scale),
         width: round(width * scale),
@@ -380,7 +380,7 @@ function createSliceNode(name, slice, slug, scale, contentHeight, button) {
         sourceName: slice.name,
         layerPath: slice.layer_path || "",
         downloadUrl: slice.scale_urls?.["2x"] || slice.download_url,
-        assetPath: `assets/resources/lanhu/${slug}/slices/${toSlug(name)}.png`,
+        assetPath: `assets/resources/textures/lanhu/${slug}/slices/${toSlug(name)}.png`,
         x: round((slice.position.x + size.width / 2) * scale - PROJECT_SIZE.width / 2),
         y: round(contentHeight / 2 - (slice.position.y + size.height / 2) * scale),
         width: round(size.width * scale),
@@ -397,7 +397,7 @@ function createGeneratedImageNode(name, slug, left, top, width, height, scale, c
     return {
         name,
         type: "generated-image",
-        assetPath: `assets/resources/lanhu/${slug}/slices/${toSlug(name)}.png`,
+        assetPath: `assets/resources/textures/lanhu/${slug}/slices/${toSlug(name)}.png`,
         x: round((left + width / 2) * scale - PROJECT_SIZE.width / 2),
         y: round(contentHeight / 2 - (top + height / 2) * scale),
         width: round(width * scale),

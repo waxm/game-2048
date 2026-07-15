@@ -7,7 +7,7 @@ import path from "node:path";
 const projectRoot = path.resolve(import.meta.dirname, "../..");
 const prefabDir = path.join(projectRoot, "assets/resources/prefabs/lanhu");
 const prefabPath = path.join(prefabDir, "UIUpgradePanel.prefab");
-const imagePath = path.join(projectRoot, "assets/resources/lanhu/upgrade-panel/reference.png");
+const imagePath = path.join(projectRoot, "assets/resources/textures/lanhu/upgrade/reference.png");
 const imageMetaPath = `${imagePath}.meta`;
 const upgradePanelScriptType = "97f38+V1WZK/oIx6ZJ4eCRR";
 

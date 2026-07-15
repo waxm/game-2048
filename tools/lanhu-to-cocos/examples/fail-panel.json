@@ -8,7 +8,7 @@
   "source": {
     "name": "失败",
     "lanhuUrl": "https://lanhuapp.com/web/#/item/project/detailDetach?pid=b4cf29b7-779f-439b-98c3-50a5e8b0b791&image_id=c3e4842d-cb74-45cc-8689-a5dd9dce05d3&tid=a700a78a-cc7b-4563-ad52-1c95e0cccdc3&project_id=b4cf29b7-779f-439b-98c3-50a5e8b0b791&fromEditor=true&type=image",
-    "imageAsset": "assets/resources/lanhu/fail-panel.png"
+    "imageAsset": "assets/resources/textures/popup/fail-panel.png"
   },
   "nodes": [
     {

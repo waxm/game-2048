@@ -26,13 +26,13 @@ async function main() {
         : await resolveDesign(lanhuUrl, args.design);
     const panelName = toPascalCase(args.panel || `UI${design.name}Panel`);
     const slug = toSlug(panelName.replace(/^UI/, "").replace(/Panel$/, "") || design.name);
-    const imageDir = path.join(projectRoot, "assets/resources/lanhu", slug);
+    const imageDir = path.join(projectRoot, "assets/resources/textures/lanhu", slug);
     const imagePath = path.join(imageDir, "reference.png");
 
     fs.mkdirSync(imageDir, { recursive: true });
     await downloadFile(design.url, imagePath);
 
-    const scriptPath = path.join(projectRoot, "assets/app/ui/panels", `${panelName}.ts`);
+    const scriptPath = path.join(projectRoot, "assets/app/ui/lanhu", `${panelName}.ts`);
     fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
     fs.writeFileSync(scriptPath, renderPanelScript({ panelName, slug }), "utf8");
 
@@ -198,7 +198,7 @@ export class ${panelName} extends UIBase {
 
     private loadLanhuReference(): void {
         if (!this.lanhuReferenceImg || this.lanhuReferenceImg.spriteFrame) return;
-        resources.load("lanhu/${slug}/reference/spriteFrame", SpriteFrame, (error, spriteFrame) => {
+        resources.load("textures/lanhu/${slug}/reference/spriteFrame", SpriteFrame, (error, spriteFrame) => {
             if (error || !spriteFrame || !this.lanhuReferenceImg) return;
             this.lanhuReferenceImg.spriteFrame = spriteFrame;
         });

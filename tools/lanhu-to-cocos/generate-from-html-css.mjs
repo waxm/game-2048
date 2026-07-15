@@ -208,7 +208,7 @@ function textContent(node) {
 async function prepareImageAssets(nodes, htmlPath, projectRoot, slug) {
     const result = new Map();
     const imageNodes = nodes.filter((node) => node.type === "image" && node.src);
-    const targetDir = path.join(projectRoot, "assets/resources/lanhu", slug, "assets");
+    const targetDir = path.join(projectRoot, "assets/resources/textures/lanhu", slug, "assets");
     fs.mkdirSync(targetDir, { recursive: true });
 
     for (const node of imageNodes) {

@@ -1,4 +1,13 @@
-import { _decorator, Button, Node, Sprite, SpriteFrame, UITransform, Vec3, resources } from "cc";
+import {
+    _decorator,
+    Button,
+    Node,
+    Sprite,
+    SpriteFrame,
+    UITransform,
+    Vec3,
+    resources,
+} from "cc";
 import { UIBase } from "../../core/ui/UIBase";
 
 const { ccclass, property } = _decorator;
@@ -41,40 +50,85 @@ export class UIUpgradePanel extends UIBase {
         this.node.name = "UIUpgradePanel";
         this.ensureTransform(this.node, 640, 1136);
 
-        const referenceNode = this.createChild("LanhuReferenceImg", 0, 0, 640, 1385);
+        const referenceNode = this.createChild(
+            "LanhuReferenceImg",
+            0,
+            0,
+            640,
+            1385,
+        );
         this.lanhuReferenceImg = referenceNode.addComponent(Sprite);
         this.closeBtn = this.createButtonHitArea("CloseBtn", 185, -67, 72, 72);
-        this.actionBtn = this.createButtonHitArea("ActionBtn", 0, -232, 260, 76);
+        this.actionBtn = this.createButtonHitArea(
+            "ActionBtn",
+            0,
+            -232,
+            260,
+            76,
+        );
     }
 
     private bindEvents(): void {
         if (this._eventsBound) return;
         this._eventsBound = true;
-        this.closeBtn?.node.on(Button.EventType.CLICK, this.onCloseBtnClick, this);
-        this.actionBtn?.node.on(Button.EventType.CLICK, this.onActionBtnClick, this);
+        this.closeBtn?.node.on(
+            Button.EventType.CLICK,
+            this.onCloseBtnClick,
+            this,
+        );
+        this.actionBtn?.node.on(
+            Button.EventType.CLICK,
+            this.onActionBtnClick,
+            this,
+        );
     }
 
     private unbindEvents(): void {
         if (!this._eventsBound) return;
         this._eventsBound = false;
-        this.closeBtn?.node.off(Button.EventType.CLICK, this.onCloseBtnClick, this);
-        this.actionBtn?.node.off(Button.EventType.CLICK, this.onActionBtnClick, this);
+        this.closeBtn?.node.off(
+            Button.EventType.CLICK,
+            this.onCloseBtnClick,
+            this,
+        );
+        this.actionBtn?.node.off(
+            Button.EventType.CLICK,
+            this.onActionBtnClick,
+            this,
+        );
     }
 
     private loadLanhuReference(): void {
-        if (!this.lanhuReferenceImg || this.lanhuReferenceImg.spriteFrame) return;
-        resources.load("lanhu/upgrade/reference/spriteFrame", SpriteFrame, (error, spriteFrame) => {
-            if (error || !spriteFrame || !this.lanhuReferenceImg) return;
-            this.lanhuReferenceImg.spriteFrame = spriteFrame;
-        });
+        if (!this.lanhuReferenceImg || this.lanhuReferenceImg.spriteFrame)
+            return;
+        resources.load(
+            "textures/lanhu/upgrade/reference/spriteFrame",
+            SpriteFrame,
+            (error, spriteFrame) => {
+                if (error || !spriteFrame || !this.lanhuReferenceImg) return;
+                this.lanhuReferenceImg.spriteFrame = spriteFrame;
+            },
+        );
     }
 
-    private createButtonHitArea(name: string, x: number, y: number, width: number, height: number): Button {
+    private createButtonHitArea(
+        name: string,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+    ): Button {
         const node = this.createChild(name, x, y, width, height);
         return node.addComponent(Button);
     }
 
-    private createChild(name: string, x: number, y: number, width: number, height: number): Node {
+    private createChild(
+        name: string,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+    ): Node {
         const node = new Node(name);
         node.setPosition(new Vec3(x, y, 0));
         this.ensureTransform(node, width, height);
@@ -82,8 +136,13 @@ export class UIUpgradePanel extends UIBase {
         return node;
     }
 
-    private ensureTransform(node: Node, width: number, height: number): UITransform {
-        const transform = node.getComponent(UITransform) ?? node.addComponent(UITransform);
+    private ensureTransform(
+        node: Node,
+        width: number,
+        height: number,
+    ): UITransform {
+        const transform =
+            node.getComponent(UITransform) ?? node.addComponent(UITransform);
         transform.setContentSize(width, height);
         return transform;
     }
