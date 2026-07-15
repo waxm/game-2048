@@ -74,8 +74,8 @@
     "_enabled": true,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 190,
-      "height": 190
+      "width": 149.33333333333334,
+      "height": 149.33333333333334
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -209,6 +209,9 @@
       "__id__": 1
     },
     "_enabled": true,
+    "pieceTransform": {
+      "__id__": 2
+    },
     "imageSprite": {
       "__id__": 3
     },

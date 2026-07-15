@@ -6,4 +6,4 @@
 level_001_source.png                 # 第 1 关完整原图
 ```
 
-当前第 1 关配置为 `3 × 3`，运行时会生成 9 块规则显示区域。原图 520 像素不能被 3 整除，裁切器会按整数边界分配为 173、173、174 像素，确保不丢失像素。代码加载 SpriteFrame 子资源时使用路径：`textures/game/levels/level_001/level_001_source/spriteFrame`。
+当前第 1 关配置为 `3 × 3`，完整拼图显示尺寸为 `448 × 448`。运行时会生成 9 块规则显示区域，原图像素按整数边界分配为 149、149、150 像素，界面格子统一显示为约 `149.33 × 149.33`。代码加载 SpriteFrame 子资源时使用路径：`textures/game/levels/level_001/level_001_source/spriteFrame`。

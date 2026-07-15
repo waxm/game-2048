@@ -5,12 +5,14 @@ import {
   Label,
   Node,
   Prefab,
+  Sprite,
   SpriteFrame,
   UITransform,
   Vec3,
 } from "cc";
 import { EventCenter } from "../../core/event/EventCenter";
 import { ResManager } from "../../core/resource/ResManager";
+import { TimerManager } from "../../core/timer/TimerManager";
 import { UIBase } from "../../core/ui/UIBase";
 import { Logger } from "../../core/utils/Logger";
 import { PuzzleLevel001Config } from "../../game/config/PuzzleLevelConfig";
@@ -46,14 +48,23 @@ interface SnapCandidate {
 /** 第 1 关规则网格相邻拼接面板。 */
 @ccclass("UIGamePanel")
 export class UIGamePanel extends UIBase {
-  /** 每块拼图在界面中的显示尺寸，必须与 PuzzlePiece Prefab 保持一致。 */
-  private static readonly PIECE_SIZE = 190;
+  /** 进入关卡后展示完整原图的时长，单位为秒。 */
+  private static readonly SOURCE_PREVIEW_DURATION = 3;
+
+  /** 单块拼图的显示宽度，由完整拼图宽度和列数计算。 */
+  private static readonly PIECE_WIDTH =
+    PuzzleLevel001Config.boardWidth / PuzzleLevel001Config.columns;
+
+  /** 单块拼图的显示高度，由完整拼图高度和行数计算。 */
+  private static readonly PIECE_HEIGHT =
+    PuzzleLevel001Config.boardHeight / PuzzleLevel001Config.rows;
 
   /** 初始网格中格子之间的空隙，吸附成功后该空隙会归零。 */
   private static readonly INITIAL_GRID_GAP = 20;
 
   /** 相邻拼图中心距离与正确距离之间允许的误差。 */
-  private static readonly SNAP_DISTANCE = 65;
+  private static readonly SNAP_DISTANCE =
+    Math.min(UIGamePanel.PIECE_WIDTH, UIGamePanel.PIECE_HEIGHT) * 0.34;
 
   /** 拼图与容器边缘之间保留的最小距离，避免贴边后难以再次拖动。 */
   private static readonly DRAG_BOUNDARY_PADDING = 8;
@@ -62,7 +73,8 @@ export class UIGamePanel extends UIBase {
   private readonly _grid = new PuzzleGrid(
     PuzzleLevel001Config.rows,
     PuzzleLevel001Config.columns,
-    UIGamePanel.PIECE_SIZE,
+    UIGamePanel.PIECE_WIDTH,
+    UIGamePanel.PIECE_HEIGHT,
   );
 
   /** 关卡标题。 */
@@ -84,6 +96,18 @@ export class UIGamePanel extends UIBase {
   /** 单块拼图 Prefab。 */
   @property({ type: Prefab })
   public piecePrefab: Prefab | null = null;
+
+  /** 开局展示完整原图的预览节点。 */
+  @property({ type: Node })
+  public sourcePreviewNode: Node | null = null;
+
+  /** 开局预览使用的完整原图组件。 */
+  @property({ type: Sprite })
+  public sourcePreviewSprite: Sprite | null = null;
+
+  /** 开局预览显示剩余观察时间的文本。 */
+  @property({ type: Label })
+  public sourcePreviewCountdownLabel: Label | null = null;
 
   /** 重玩按钮。 */
   @property({ type: Button })
@@ -115,6 +139,15 @@ export class UIGamePanel extends UIBase {
    */
   private _levelRequestId = 0;
 
+  /** 当前完整原图预览使用的框架计时器编号。 */
+  private _sourcePreviewTimerId: number | null = null;
+
+  /** 取消预览计时后用于结束旧异步等待的回调。 */
+  private _sourcePreviewResolve: (() => void) | null = null;
+
+  /** 当前原图预览剩余的整秒数。 */
+  private _sourcePreviewRemainingSeconds = 0;
+
   /** 节点加载时校验 Prefab 引用并创建第一关。 */
   protected onLoad(): void {
     this.assertRequiredBindings({
@@ -123,6 +156,9 @@ export class UIGamePanel extends UIBase {
       feedbackLabel: this.feedbackLabel,
       puzzleContainer: this.puzzleContainer,
       piecePrefab: this.piecePrefab,
+      sourcePreviewNode: this.sourcePreviewNode,
+      sourcePreviewSprite: this.sourcePreviewSprite,
+      sourcePreviewCountdownLabel: this.sourcePreviewCountdownLabel,
       restartButton: this.restartButton,
       backButton: this.backButton,
     });
@@ -145,6 +181,8 @@ export class UIGamePanel extends UIBase {
   /** 面板关闭时注销事件并销毁动态拼图实例。 */
   protected onClose(): void {
     this._levelRequestId += 1;
+    this.cancelSourcePreviewWait();
+    this.hideSourcePreview();
     this.unbindEvents();
     this.clearPieces();
     super.onClose();
@@ -153,6 +191,8 @@ export class UIGamePanel extends UIBase {
   /** 加载第一关整图，运行时裁成网格块并按打乱顺序放入规则网格。 */
   private async createLevel(): Promise<void> {
     const requestId = ++this._levelRequestId;
+    this.cancelSourcePreviewWait();
+    this.hideSourcePreview();
     this.clearPieces();
     this._completed = false;
 
@@ -166,11 +206,17 @@ export class UIGamePanel extends UIBase {
         return;
       }
 
+      // 必须在原图交给预览 Sprite 之前完成裁切，避免预览渲染改变原图的运行时纹理状态。
       const frames = PuzzleImageSlicer.slice(
         sourceFrame,
         PuzzleLevel001Config.rows,
         PuzzleLevel001Config.columns,
       );
+      await this.showSourcePreview(sourceFrame);
+      if (!this.node.isValid || requestId !== this._levelRequestId) {
+        return;
+      }
+
       PuzzleLevel001Config.pieceOrder.forEach((pieceId, displayIndex) => {
         const pieceNode = instantiate(this.piecePrefab!);
         const piece = pieceNode.getComponent(PuzzlePiece);
@@ -180,6 +226,7 @@ export class UIGamePanel extends UIBase {
 
         this.puzzleContainer!.addChild(pieceNode);
         pieceNode.setPosition(this.getInitialGridPosition(displayIndex));
+        piece.setDisplaySize(UIGamePanel.PIECE_WIDTH, UIGamePanel.PIECE_HEIGHT);
         piece.setData({
           id: pieceId,
           spriteFrame: frames[pieceId],
@@ -193,13 +240,79 @@ export class UIGamePanel extends UIBase {
         this._clusters.set(pieceId, new Set([pieceId]));
         this._pieceClusterIds.set(pieceId, pieceId);
       });
+      this.feedbackLabel!.string = "拖动相邻图片，让正确边缘靠近";
     } catch (error) {
       if (!this.node.isValid || requestId !== this._levelRequestId) {
         return;
       }
+      this.hideSourcePreview();
       this.feedbackLabel!.string = "第一关图片加载失败，请查看控制台";
       Logger.error("创建第 1 关拼图失败。", error);
     }
+  }
+
+  /** 展示完整原图并等待规定时长，结束后再允许创建拼图。 */
+  private async showSourcePreview(sourceFrame: SpriteFrame): Promise<void> {
+    this.cancelSourcePreviewWait();
+    this.sourcePreviewSprite!.spriteFrame = sourceFrame;
+    this.sourcePreviewNode!.active = true;
+    this._sourcePreviewRemainingSeconds = UIGamePanel.SOURCE_PREVIEW_DURATION;
+    this.refreshSourcePreviewCountdown();
+    await this.waitForSourcePreview();
+    this.hideSourcePreview();
+  }
+
+  /** 使用逐秒框架计时器显示 3、2、1，并在倒计时归零后结束预览。 */
+  private waitForSourcePreview(): Promise<void> {
+    return new Promise((resolve) => {
+      this._sourcePreviewResolve = resolve;
+
+      const countDown = (): void => {
+        this._sourcePreviewRemainingSeconds -= 1;
+        if (this._sourcePreviewRemainingSeconds <= 0) {
+          this._sourcePreviewTimerId = null;
+          this._sourcePreviewResolve = null;
+          resolve();
+          return;
+        }
+
+        this.refreshSourcePreviewCountdown();
+        this._sourcePreviewTimerId = TimerManager.delay(countDown, 1);
+      };
+
+      this._sourcePreviewTimerId = TimerManager.delay(countDown, 1);
+    });
+  }
+
+  /** 同步刷新预览层和底部提示中的剩余秒数。 */
+  private refreshSourcePreviewCountdown(): void {
+    const seconds = this._sourcePreviewRemainingSeconds;
+    this.sourcePreviewCountdownLabel!.string = `观察原图  ${seconds}`;
+    this.feedbackLabel!.string = `记住完整图片，${seconds} 秒后开始`;
+  }
+
+  /**
+   * 取消尚未结束的预览等待。
+   *
+   * 清理计时器后仍要主动结束 Promise，让旧 createLevel 能继续执行请求编号校验，
+   * 避免重玩或关闭面板后留下永久等待的异步任务。
+   */
+  private cancelSourcePreviewWait(): void {
+    if (this._sourcePreviewTimerId !== null) {
+      TimerManager.clear(this._sourcePreviewTimerId);
+      this._sourcePreviewTimerId = null;
+    }
+    const resolve = this._sourcePreviewResolve;
+    this._sourcePreviewResolve = null;
+    this._sourcePreviewRemainingSeconds = 0;
+    resolve?.();
+  }
+
+  /** 隐藏完整原图预览并释放 SpriteFrame 引用。 */
+  private hideSourcePreview(): void {
+    this.sourcePreviewNode!.active = false;
+    this.sourcePreviewSprite!.spriteFrame = null;
+    this.sourcePreviewCountdownLabel!.string = "观察原图";
   }
 
   /**
@@ -210,9 +323,10 @@ export class UIGamePanel extends UIBase {
   private getInitialGridPosition(displayIndex: number): Vec3 {
     const displayRow = Math.floor(displayIndex / PuzzleLevel001Config.columns);
     const displayColumn = displayIndex % PuzzleLevel001Config.columns;
-    const step = UIGamePanel.PIECE_SIZE + UIGamePanel.INITIAL_GRID_GAP;
-    const x = (displayColumn - (PuzzleLevel001Config.columns - 1) / 2) * step;
-    const y = 40 + ((PuzzleLevel001Config.rows - 1) / 2 - displayRow) * step;
+    const stepX = UIGamePanel.PIECE_WIDTH + UIGamePanel.INITIAL_GRID_GAP;
+    const stepY = UIGamePanel.PIECE_HEIGHT + UIGamePanel.INITIAL_GRID_GAP;
+    const x = (displayColumn - (PuzzleLevel001Config.columns - 1) / 2) * stepX;
+    const y = 40 + ((PuzzleLevel001Config.rows - 1) / 2 - displayRow) * stepY;
     return new Vec3(x, y, 0);
   }
 
@@ -366,7 +480,8 @@ export class UIGamePanel extends UIBase {
       throw new Error("UIGamePanel.puzzleContainer 缺少 UITransform 组件。");
     }
 
-    const halfPieceSize = UIGamePanel.PIECE_SIZE / 2;
+    const halfPieceWidth = UIGamePanel.PIECE_WIDTH / 2;
+    const halfPieceHeight = UIGamePanel.PIECE_HEIGHT / 2;
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
@@ -377,10 +492,10 @@ export class UIGamePanel extends UIBase {
       if (!node) {
         return;
       }
-      minX = Math.min(minX, node.position.x - halfPieceSize);
-      maxX = Math.max(maxX, node.position.x + halfPieceSize);
-      minY = Math.min(minY, node.position.y - halfPieceSize);
-      maxY = Math.max(maxY, node.position.y + halfPieceSize);
+      minX = Math.min(minX, node.position.x - halfPieceWidth);
+      maxX = Math.max(maxX, node.position.x + halfPieceWidth);
+      minY = Math.min(minY, node.position.y - halfPieceHeight);
+      maxY = Math.max(maxY, node.position.y + halfPieceHeight);
     });
 
     if (!Number.isFinite(minX)) {
