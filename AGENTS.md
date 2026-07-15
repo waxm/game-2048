@@ -1,77 +1,145 @@
 # AGENTS.md
 
-## 项目概况
+## 项目基础
 
 - 引擎版本：Cocos Creator 3.8.4。
-- 项目 UI 尺寸：640 x 1136。
-- UI 来源：蓝湖页面、蓝湖代码页签 HTML/CSS、切图资源、策划案。
+- 设计尺寸：竖屏 `640 x 1136`。
+- UI 输入来源：蓝湖页面、蓝湖 HTML/CSS、切图资源和策划案。
+- 本文件中的规则适用于新增代码、资源、Prefab，以及对现有内容的修改和迁移。
 
-## Prefab 目录规范
+## 需求偏差与返工
 
-- 所有需要动态加载的 Prefab 放在 `assets/resources/prefabs`。
-- Prefab 必须按功能模块分类：`common`、`home`、`game`、`popup`、`item`。
-- 蓝湖转换生成的 Prefab 统一放在 `assets/resources/prefabs/lanhu`。
-- 新增 Prefab 不要直接放在 `assets/resources/prefabs` 根目录。
-- 加载 Prefab 时必须使用包含模块目录的资源路径，例如 `prefabs/home/UIHomePanel`。
+- 当用户明确表示初版结果与预期不一致，或因需求描述不完整、理解偏差导致实现方向错误时，必须停止在初版上继续叠加局部补丁。
+- 返工前必须重新阅读用户最新要求、上下文、参考视频或图片以及当前工程，从目标效果、交互规则、数据结构、节点结构和资源关系重新分析实现方案。
+- 必须先识别初版与预期不一致的根本原因，再重写受影响的代码、Prefab、配置或生成工具；不得通过增加临时判断、兜底节点、兼容分支或重复状态来掩盖错误结构。
+- 仅可保留已经确认符合最新需求且边界清晰的基础能力；与新方案冲突的旧逻辑必须删除，避免新旧实现同时存在。
+- 优先根据现有上下文和用户提供的参考还原目标；只有缺少决定实现方向的关键信息且无法从工程中确认时，才向用户提出必要问题。
+- 重写完成后必须按照“完成前验证”重新验证完整流程，不得仅以局部功能生效或编译通过作为完成标准。
+- 上述规则适用于方向性偏差和整体结构错误；范围明确、不会延续错误设计的普通缺陷可以直接修复。
 
-## Prefab 节点绑定与校验
+## 模块目录
 
-- Prefab 驱动的业务 UI 不允许在脚本中使用 `new Node()` 创建界面节点，也不允许通过递归、`getChildByName()`、`find()` 等方式兜底查找节点。
-- 脚本需要读取或修改的 Label、Sprite、Button、ScrollView、Prefab、Node 等，必须通过 `@property` 暴露，并在 Prefab 的 Inspector 中显式绑定。
-- 面板在 `onLoad()` 时必须调用 `UIBase.assertRequiredBindings()` 校验所有必填引用；缺失绑定必须直接抛出明确错误。
-- 不允许为缺失引用创建临时节点、赋默认 UI 或静默跳过事件绑定。
+UI 代码、Prefab 和 Texture 使用同一套模块名：
 
-## 代码注释规范
+| 模块 | 用途 | UI 代码 | Prefab | Texture |
+| --- | --- | --- | --- | --- |
+| `common` | 通用 UI 和资源 | `assets/app/ui/common` | `assets/resources/prefabs/common` | `assets/resources/textures/common` |
+| `home` | 首页和大厅 | `assets/app/ui/home` | `assets/resources/prefabs/home` | `assets/resources/textures/home` |
+| `game` | 游戏面板、玩法组件和关卡资源 | `assets/app/ui/game` | `assets/resources/prefabs/game` | `assets/resources/textures/game` |
+| `popup` | 独立弹窗 | `assets/app/ui/popup` | `assets/resources/prefabs/popup` | `assets/resources/textures/popup` |
+| `item` | 列表项和可复用小组件 | `assets/app/ui/item` | `assets/resources/prefabs/item` | `assets/resources/textures/item` |
+| `lanhu` | 蓝湖工具生成的内容 | `assets/app/ui/lanhu` | `assets/resources/prefabs/lanhu` | `assets/resources/textures/lanhu` |
 
-- 所有 TypeScript 代码使用中文注释。
+目录使用规则：
+
+- UI 脚本、Prefab 和图片必须按模块存放，不得直接堆在 `ui`、`prefabs` 或 `textures` 根目录。
+- 不允许重新建立集中收纳所有 UI 脚本的 `assets/app/ui/panels`。
+- 模块内部可以继续按用途分层，例如关卡原图放在 `textures/game/levels/level_001`。
+- 动态加载路径必须包含模块目录，例如 `prefabs/home/UIHomePanel`、`textures/game/levels/level_001/level_001_source/spriteFrame`。
+- 移动脚本或资源时必须同时移动对应 `.meta`，保持脚本、Texture、SpriteFrame 的 UUID 及 Prefab 绑定不变。
+- 迁移资源后必须同步修改动态加载路径、生成工具和相关文档。
+- 新业务可以增加语义明确的模块目录，但代码、Prefab 和 Texture 的模块归属必须保持一致。
+
+## Prefab 节点绑定
+
+Prefab 是业务 UI 节点结构的唯一来源：
+
+- 禁止在业务 UI 脚本中使用 `new Node()` 创建界面节点。
+- 禁止使用递归、`getChildByName()`、`find()` 等方式查找或兜底补齐节点。
+- 脚本需要读取或修改的 `Node`、`Label`、`Sprite`、`Button`、`ScrollView`、`Prefab` 等引用，必须通过 `@property` 暴露并在 Inspector 中显式绑定。
+- 面板必须在 `onLoad()` 调用 `UIBase.assertRequiredBindings()` 校验必填引用。
+- 缺失绑定必须抛出包含字段信息的明确错误；不得创建临时节点、填入默认 UI 或静默跳过事件绑定。
+
+## Prefab 与 Scene 编辑
+
+- 禁止直接手写、局部拼接或凭经验修改 `.prefab`、`.scene` 的序列化 JSON。
+- Prefab 和 Scene 优先通过 Cocos Creator 编辑器创建；需要批量生成时，必须使用可重复执行且带结构校验的生成工具。
+- 生成工具不得猜测脚本压缩类 ID；必须根据脚本 `.meta` UUID 和 Creator 实际编译结果取得正确类型 ID。
+- 修改或生成 Prefab、Scene 后，必须校验对象 `__id__` 引用范围、节点父子关系、脚本组件、资源 UUID 和所有必填 `@property` 绑定。
+- 文件必须经过 Creator 重新导入，确认控制台不存在 `Can not find class`、`Missing Script`、反序列化失败或资源 UUID 丢失后，才视为完成。
+- 生成工具应保持稳定的资源 UUID；重新生成现有文件时不得无故改变 Prefab、Scene 或脚本绑定使用的 UUID。
+
+## 生命周期与清理
+
+- `EventCenter.on()` 必须有对应的 `EventCenter.off()`；`Node.on()` 必须有对应的 `Node.off()`。
+- 按钮、触摸、键盘、全局事件、计时器、`schedule`、Tween 和自定义回调必须在面板关闭、组件销毁或场景退出时清理。
+- 事件注册函数必须可重复调用且不会重复绑定；需要使用状态标记或其他明确方式保证幂等。
+- 在 `onLoad()`、`onEnable()`、`onOpen()` 注册的内容，应分别在对应的 `onDestroy()`、`onDisable()`、`onClose()` 阶段释放。
+- 销毁控制器或运行对象时必须清空其事件监听、计时任务、节点引用和外部回调，避免重玩或再次进入场景后重复响应。
+- 清理函数必须允许重复调用，不得因节点已销毁、事件已注销或任务已结束而再次抛错。
+
+## 异步资源加载
+
+- 业务代码统一通过 `ResManager` 加载和实例化资源，禁止散落使用 `resources.load()`、Bundle API 或重复封装加载逻辑；框架资源层和生成工具除外。
+- 动态加载路径必须与资源类型一致；加载图片的 SpriteFrame 子资源时必须使用包含 `/spriteFrame` 的完整路径。
+- `await` 返回后必须确认组件、节点和当前业务状态仍然有效，再修改 UI 或写入运行状态。
+- 面板关闭、场景切换、重玩或连续发起同类请求时，必须通过请求序号、状态标记或取消机制阻止旧请求覆盖新状态。
+- 加载失败必须记录资源类型、完整路径和原始错误，并向当前界面提供明确的失败状态；不得静默失败或创建替代 UI 掩盖问题。
+- 必须明确资源的持有和释放责任；仍被场景、Prefab、SpriteFrame、缓存或其他对象引用的资源不得提前释放。
+- 重复加载的公共资源应使用现有缓存或资源管理能力，不得在多个业务模块中分别维护不一致的缓存。
+
+## 完成前验证
+
+- 新增或修改 TypeScript 后必须执行 `tsc --noEmit`，确认项目代码编译通过。
+- 修改 Prefab 或 Scene 后必须校验序列化结构、脚本类 ID、资源 UUID、节点父子关系和所有必填绑定。
+- 新增、移动或重命名资源后必须确认 `.meta` 保留、动态加载路径正确，并检查 Creator 资源导入日志没有错误。
+- Creator 必须完成相关脚本和资源的重新导入；仅修改磁盘文件但尚未进入 Creator 资源数据库，不视为完成。
+- 用户可操作功能必须运行实际预览，检查 Chrome 控制台第一条红色错误，并验证主要操作流程、重复进入、重玩和退出流程。
+- UI 修改必须在 `640 x 1136` 设计尺寸下检查位置、尺寸、层级、遮挡、越界、触摸区域和文本显示。
+- 无法执行某项验证时必须明确说明未验证的项目和原因，不得用静态检查结果代替实际运行结果。
+
+## TypeScript 注释
+
+- 所有 TypeScript 注释使用中文。
 - 类、接口、枚举、成员变量、常量、公开方法和生命周期方法必须说明用途。
-- 私有函数只要包含状态判断、事件通信、资源释放、坐标换算、数据转换、循环构建或其他非直观逻辑，也必须补充用途注释。
-- 复杂逻辑块前说明“为什么这样做”，例如吸附阈值、缓存策略、状态变更顺序；不写逐行翻译代码的无效注释。
-- 新增或修改代码时，同步补齐受影响变量、函数和复杂逻辑的注释。
+- 包含状态判断、事件通信、资源释放、坐标换算、数据转换、循环构建等非直观逻辑的私有函数必须写注释。
+- 复杂逻辑块应说明“为什么这样做”，例如吸附阈值、缓存策略和状态变更顺序。
+- 新增或修改代码时，同步补齐受影响代码的注释；不写逐行翻译代码的无效注释。
 
-## 蓝湖转 Cocos 规则
+## 蓝湖生成
 
-- 蓝湖 HTML/CSS 优先作为视觉规格；切图用于 Sprite 资源。
-- UI 面板脚本生成到 `assets/app/ui/panels`。
-- 生成的面板脚本继承 `assets/app/core/ui/UIBase.ts` 中的 `UIBase`。
-- 生成文件里不要写具体业务逻辑，按钮事件只生成空方法或 TODO。
+- 蓝湖 HTML/CSS 优先作为视觉规格，蓝湖切图用于 Sprite 资源。
+- 生成脚本、Prefab、切图分别放入 `ui/lanhu`、`prefabs/lanhu`、`textures/lanhu`。
+- 面板脚本必须继承 `assets/app/core/ui/UIBase.ts` 中的 `UIBase`。
+- 生成文件只负责节点绑定和基础事件入口，不写具体业务逻辑；按钮方法保持空实现或 `TODO`。
+- 生成规格中的动态文本和图片应标注 `binding`、`bindingReason`，便于策划案接入后复核。
 
 ## 节点映射
 
-- `image` -> `Node + UITransform + Sprite`。
-- `text` -> `Node + UITransform + Label`。
-- `button` -> `Node + UITransform + Sprite + Button`。
-- 重复列表结构 -> `ScrollView + View + Content + ItemPrefab`，不要把多条数据静态拼死在主 prefab 里。
-- 按钮节点需要暴露 `@property(Button)` 字段，并注册点击事件。
-- 如果文本属于按钮上的文字，必须作为按钮节点的子节点，不要和按钮背景做成同级节点。
-- 按钮默认使用缩放点击反馈：`Button.transition = SCALE`，按下缩放到 `0.90`。
+- `image` → `Node + UITransform + Sprite`。
+- `text` → `Node + UITransform + Label`。
+- `button` → `Node + UITransform + Sprite + Button`。
+- 按钮文字必须是按钮节点的子节点，不得与按钮背景同级。
+- 按钮必须暴露 `@property(Button)` 并注册点击事件。
+- 按钮默认使用缩放反馈：`Button.transition = SCALE`，按下缩放到 `0.90`。
+- 重复数据结构使用 `ScrollView + View + Content + ItemPrefab`，不得在主 Prefab 中静态铺满业务数据。
 
-## 列表识别规则
+## 列表生成
 
-- 如果蓝湖 HTML/CSS 中出现连续重复容器，例如 `box_12`、`box_13`、`box_14`，并且内部结构一致，应判定为列表。
-- 典型列表项特征：头像/图标 + 名称文本 + 数值文本 + 操作按钮，且多项按固定 y 间距排列。
-- 判定为列表后，主 prefab 只生成列表容器，不要把每一条都作为业务数据静态节点铺进去。
-- 主 prefab 应包含 `ScrollView`、`View`、`Content`。
-- 列表项应拆成独立 prefab，例如 `UIVisitFriendItem.prefab`。
-- 面板脚本应暴露 `@property(ScrollView)`、`@property(Node)` content、`@property(Prefab)` itemPrefab。
-- Item 脚本应暴露头像、名称、数值、按钮等字段，并提供 `setData()` 入口。
+出现以下特征时应识别为列表：
 
-## 文本绑定默认规则
+- HTML/CSS 中存在连续重复且结构一致的容器，例如 `box_12`、`box_13`、`box_14`。
+- 多项按固定间距排列，并重复出现头像或图标、名称、数值、操作按钮等字段。
 
-- 未提供策划案时，先按默认规则判断文本是否需要绑定；策划案字段说明优先级高于默认规则。
-- 默认固定文案：面板标题、tab 文案、普通按钮文字、说明文案、固定功能入口文案。
-- 默认绑定文案：昵称、名称、ID、房间号、输入框内容或 placeholder、数字、数量、资产、持有数、等级、经验、进度、声望、价格、货币、倒计时、列表项字段。
-- 按钮子文本仍然挂在按钮节点下；如果按钮文字是价格/货币，例如 `50灵玉`，默认也标记为可绑定。
+识别为列表后：
 
-## 图片绑定默认规则
+- 主 Prefab 只保留 `ScrollView`、`View`、`Content` 和列表入口。
+- 列表项拆成独立 Prefab，例如 `UIVisitFriendItem.prefab`。
+- 面板脚本暴露 `@property(ScrollView)`、`@property(Node)` content 和 `@property(Prefab)` itemPrefab。
+- Item 脚本暴露头像、名称、数值、按钮等动态字段，并提供 `setData()` 入口。
 
-- 未提供策划案时，图片资源也按默认规则判断是否需要绑定；策划案字段说明优先级高于默认规则。
-- 默认固定图片：面板背景、弹窗底板、标题条、输入框背景、按钮底图、tab 选中底图、关闭按钮、固定装饰。
-- 默认绑定图片：头像、宠物/角色图、道具图标、货币图标、奖励图标、状态/品质图标、列表项里的动态图。
-- 生成规格文件时应标注文本和图片的 `binding`、`bindingReason`，方便后续根据策划案修正。
+## 默认绑定
 
-## 九宫拉伸规则
+策划案字段说明优先于以下默认规则：
 
-- 按钮背景、输入框背景、弹窗底板、面板底板、列表项背景默认优先识别为九宫拉伸候选。
-- Cocos 中使用 `Sprite.type = SLICED`，并在图片 meta 中设置 `borderTop / borderBottom / borderLeft / borderRight`。
-- 默认边距取 CSS radius 或 `min(width, height) / 2` 的合理值；复杂纹理按钮需要策划案或人工复核。
+- 固定文本：面板标题、Tab 文案、普通按钮文字、说明文案、固定功能入口。
+- 动态文本：昵称、名称、ID、房间号、输入内容、placeholder、数量、资产、等级、经验、进度、价格、货币、倒计时和列表项字段。
+- 固定图片：面板背景、弹窗底板、标题条、输入框背景、按钮底图、Tab 选中底图、关闭按钮和固定装饰。
+- 动态图片：头像、角色或宠物、道具、货币、奖励、状态、品质图标及列表项图片。
+- 按钮子文本仍遵守动态绑定规则；价格或货币文字默认视为动态文本。
+
+## 九宫拉伸
+
+- 按钮背景、输入框背景、弹窗底板、面板底板和列表项背景默认作为九宫拉伸候选。
+- Cocos 中使用 `Sprite.type = SLICED`，并在图片 `.meta` 中设置 `borderTop`、`borderBottom`、`borderLeft`、`borderRight`。
+- 默认边距参考 CSS radius 或 `min(width, height) / 2` 的合理值；复杂纹理按钮需要人工或策划案复核。
