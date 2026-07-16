@@ -96,7 +96,7 @@ export class App {
         TimerManager.clearAll();
         PoolManager.clearAll();
         AudioManager.reset();
-        ResManager.clearBundles();
+        ResManager.reset();
         SceneManager.reset();
         EventCenter.clear();
         this._services.clear();

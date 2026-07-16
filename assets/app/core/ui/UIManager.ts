@@ -1,5 +1,6 @@
 import { Node } from "cc";
 import { ResManager } from "../resource/ResManager";
+import type { PrefabInstance } from "../resource/ResManager";
 import { Logger } from "../utils/Logger";
 import { UIBase } from "./UIBase";
 
@@ -39,6 +40,9 @@ export class UIManager {
 
     /** 已缓存但未显示的 UI 节点。 */
     private static readonly _cachedNodes: Map<string, Node> = new Map();
+
+    /** 动态节点到源 Prefab 资源句柄的映射，节点销毁时必须同步释放。 */
+    private static readonly _prefabInstances: Map<Node, PrefabInstance> = new Map();
 
     /** 同名 UI 正在执行的打开任务，用于合并连续点击产生的并发请求。 */
     private static readonly _openingPromises: Map<string, Promise<UIBase | null>> = new Map();
@@ -134,6 +138,7 @@ export class UIManager {
         // 已销毁节点不能继续占用打开状态，否则后续请求会一直拿到无效组件。
         if (openedPanel) {
             this._openedPanels.delete(name);
+            this.destroyManagedNode(openedPanel.node);
         }
 
         const openingPromise = this._openingPromises.get(name);
@@ -198,9 +203,7 @@ export class UIManager {
             this._openedPanels.delete(config.name);
             this._cachedNodes.delete(config.name);
             Logger.error(`UI 生命周期打开失败：${config.name}`, error);
-            if (panel.node.isValid) {
-                panel.node.destroy();
-            }
+            this.destroyManagedNode(panel.node);
             return null;
         }
     }
@@ -221,8 +224,8 @@ export class UIManager {
             if (destroy) {
                 const cachedNode = this._cachedNodes.get(name);
                 this._cachedNodes.delete(name);
-                if (cachedNode?.isValid) {
-                    cachedNode.destroy();
+                if (cachedNode) {
+                    this.destroyManagedNode(cachedNode);
                 }
             }
             return;
@@ -243,7 +246,7 @@ export class UIManager {
         // 关闭失败说明面板内部状态不再可信，必须销毁，不能放回缓存复用。
         if (closeFailed || destroy || !shouldCache) {
             this._cachedNodes.delete(name);
-            panel.node.destroy();
+            this.destroyManagedNode(panel.node);
             return;
         }
 
@@ -287,12 +290,14 @@ export class UIManager {
         this.closeAll(true);
 
         for (const node of this._cachedNodes.values()) {
-            if (node.isValid) {
-                node.destroy();
-            }
+            this.destroyManagedNode(node);
         }
 
         this._cachedNodes.clear();
+        // 防御性兜底：任何未进入 opened/cached 表的异步实例也必须归还 Prefab 所有权。
+        for (const node of Array.from(this._prefabInstances.keys())) {
+            this.destroyManagedNode(node);
+        }
         this._openRequestVersions.clear();
         this._configs.clear();
         this._root = null;
@@ -335,7 +340,7 @@ export class UIManager {
             return;
         }
 
-        panel.node.destroy();
+        this.destroyManagedNode(panel.node);
     }
 
     /**
@@ -345,14 +350,20 @@ export class UIManager {
         let node = this._cachedNodes.get(config.name) ?? null;
 
         if (!node || !node.isValid) {
+            if (node) {
+                this._cachedNodes.delete(config.name);
+                this.destroyManagedNode(node);
+            }
             if (!config.path) {
                 Logger.warn(`UI 配置缺少 Prefab 路径：${config.name}`);
                 return null;
             }
 
-            node = await ResManager.instantiatePrefab(config.path, {
+            const prefabInstance = await ResManager.instantiatePrefab(config.path, {
                 bundleName: config.bundleName,
             });
+            node = prefabInstance.node;
+            this.trackPrefabInstance(prefabInstance);
 
             // 新实例挂到场景前先保持隐藏，避免 Prefab 默认文本在业务数据填充前显示一帧。
             node.active = false;
@@ -366,10 +377,46 @@ export class UIManager {
 
         if (!panel) {
             Logger.warn(`UI 节点缺少 UIBase 组件：${config.name}`);
-            node.destroy();
+            this.destroyManagedNode(node);
             return null;
         }
 
         return panel;
+    }
+
+    /**
+     * 销毁动态 UI 节点并归还它持有的源 Prefab 资源所有权。
+     *
+     * 节点可能已被场景提前销毁，因此释放句柄不能依赖 node.isValid；该函数可重复调用。
+     */
+    private static destroyManagedNode(node: Node): void {
+        if (node.isValid) {
+            node.destroy();
+            return;
+        }
+
+        // 节点的销毁事件已经发生时执行兜底；句柄本身幂等，不会重复 decRef。
+        this.releaseManagedNodeResources(node);
+    }
+
+    /**
+     * 记录动态实例，并从创建时就监听节点销毁。
+     *
+     * 节点可能随 Scene 被外部销毁，不能只依赖 UIManager.close 才归还 Prefab 所有权。
+     */
+    private static trackPrefabInstance(prefabInstance: PrefabInstance): void {
+        const node = prefabInstance.node;
+        this._prefabInstances.set(node, prefabInstance);
+        node.once(Node.EventType.NODE_DESTROYED, this.releaseManagedNodeResources, this);
+    }
+
+    /** 节点真正进入销毁流程后，移除跟踪记录并幂等归还源 Prefab 所有权。 */
+    private static releaseManagedNodeResources(node: Node): void {
+        const prefabInstance = this._prefabInstances.get(node);
+        if (!prefabInstance) {
+            return;
+        }
+        this._prefabInstances.delete(node);
+        prefabInstance.release();
     }
 }

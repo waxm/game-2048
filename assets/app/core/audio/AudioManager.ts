@@ -1,5 +1,7 @@
 import { AudioClip, AudioSource } from "cc";
 import { ResManager } from "../resource/ResManager";
+import type { ResourceHandle } from "../resource/ResManager";
+import { TimerManager } from "../timer/TimerManager";
 import { Logger } from "../utils/Logger";
 
 /**
@@ -30,6 +32,15 @@ export class AudioManager {
 
     /** 当前背景音乐路径。 */
     private static _currentMusicPath = "";
+
+    /** 当前背景音乐资源所有权，停止或切歌后立即归还。 */
+    private static _musicHandle: ResourceHandle<AudioClip> | null = null;
+
+    /** 正在播放的一次性音效资源，播放结束后按时长归还。 */
+    private static readonly _effectHandles: Set<ResourceHandle<AudioClip>> = new Set();
+
+    /** 音效句柄对应的延迟释放计时器。 */
+    private static readonly _effectReleaseTimers: Map<ResourceHandle<AudioClip>, number> = new Map();
 
     /** 音乐异步加载请求编号，用于阻止停止或重置后的旧请求继续播放。 */
     private static _musicRequestId = 0;
@@ -73,18 +84,24 @@ export class AudioManager {
         }
 
         const requestId = ++this._musicRequestId;
-        const clip = await ResManager.load(path, AudioClip, {
+        const handle = await ResManager.acquire(path, AudioClip, {
             bundleName: options.bundleName,
         });
 
         // 加载期间可能已经停止音乐、重置框架或更换 AudioSource，旧结果必须丢弃。
         if (requestId !== this._musicRequestId || source !== this._audioSource || !source.isValid) {
+            handle.release();
             return;
         }
 
+        // 先解除 AudioSource 对旧音乐的使用，再归还旧资源，避免释放后组件仍引用旧 clip。
+        source.stop();
+        source.clip = null;
+        this.releaseMusicHandle();
+        this._musicHandle = handle;
         this._currentMusicPath = path;
-        this._musicVolume = options.volume ?? this._musicVolume;
-        source.clip = clip;
+        this._musicVolume = this.clampVolume(options.volume ?? this._musicVolume);
+        source.clip = handle.asset;
         source.loop = loop;
         source.volume = this._musicVolume;
         source.play();
@@ -95,14 +112,12 @@ export class AudioManager {
      */
     public static stopMusic(): void {
         this._musicRequestId += 1;
-        const source = this.getAudioSource();
-
-        if (!source) {
-            return;
+        const source = this._audioSource;
+        if (source?.isValid) {
+            source.stop();
+            source.clip = null;
         }
-
-        source.stop();
-        source.clip = null;
+        this.releaseMusicHandle();
         this._currentMusicPath = "";
     }
 
@@ -119,6 +134,8 @@ export class AudioManager {
             source.stop();
             source.clip = null;
         }
+        this.releaseMusicHandle();
+        this.releaseAllEffectHandles();
         this._audioSource = null;
         this._musicVolume = 1;
         this._effectVolume = 1;
@@ -152,16 +169,18 @@ export class AudioManager {
         }
 
         const lifecycleId = this._lifecycleId;
-        const clip = await ResManager.load(path, AudioClip, {
+        const handle = await ResManager.acquire(path, AudioClip, {
             bundleName: options.bundleName,
         });
 
         if (lifecycleId !== this._lifecycleId || source !== this._audioSource || !source.isValid) {
+            handle.release();
             return;
         }
 
-        const volume = options.volume ?? this._effectVolume;
-        source.playOneShot(clip, volume);
+        const volume = this.clampVolume(options.volume ?? this._effectVolume);
+        source.playOneShot(handle.asset, volume);
+        this.holdEffectUntilPlaybackEnds(handle);
     }
 
     /**
@@ -206,5 +225,45 @@ export class AudioManager {
      */
     private static clampVolume(volume: number): number {
         return Math.max(0, Math.min(1, volume));
+    }
+
+    /** 归还当前背景音乐句柄；允许停止、切歌和 reset 重复调用。 */
+    private static releaseMusicHandle(): void {
+        this._musicHandle?.release();
+        this._musicHandle = null;
+    }
+
+    /**
+     * 保持一次性音效资源到预计播放结束。
+     *
+     * decRef 不能紧跟在 playOneShot 后执行，因为底层音频仍在异步读取 clip；已知时长时延后
+     * 一小段保护时间释放，时长不可用时保留到 reset，宁可晚释放也不冒播放中断的风险。
+     */
+    private static holdEffectUntilPlaybackEnds(handle: ResourceHandle<AudioClip>): void {
+        this._effectHandles.add(handle);
+        const duration = handle.asset.getDuration();
+        if (!Number.isFinite(duration) || duration <= 0) {
+            Logger.warn(`音效时长不可用，将在音频管理器重置时释放：${handle.path}`);
+            return;
+        }
+
+        const timerId = TimerManager.delay(() => {
+            this._effectReleaseTimers.delete(handle);
+            this._effectHandles.delete(handle);
+            handle.release();
+        }, duration + 0.25);
+        this._effectReleaseTimers.set(handle, timerId);
+    }
+
+    /** 清理所有音效释放计时器并归还仍在播放或等待兜底清理的资源。 */
+    private static releaseAllEffectHandles(): void {
+        for (const timerId of this._effectReleaseTimers.values()) {
+            TimerManager.clear(timerId);
+        }
+        this._effectReleaseTimers.clear();
+        for (const handle of this._effectHandles) {
+            handle.release();
+        }
+        this._effectHandles.clear();
     }
 }

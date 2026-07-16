@@ -7,15 +7,16 @@ import path from "node:path";
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const prefabDir = path.join(projectRoot, "assets/resources/prefabs/game");
 const popupPrefabDir = path.join(projectRoot, "assets/resources/prefabs/popup");
+const creatorChunkDir = path.join(
+  projectRoot,
+  "temp/programming/packer-driver/targets/editor/chunks",
+);
 const uiLayer = 33554432;
-const panelScriptType = "e6b99/MOTpC9rOJra+XZpqg";
-// 此 ID 来自 Creator 对 PuzzlePiece.ts UUID 的压缩结果，Prefab 反序列化依赖它查找脚本类。
-const pieceScriptType = "ef85cMk1SROQrGG015486DV";
-// 此 ID 来自 Creator 对 UIResultPanel.ts UUID 的实际编译结果。
-const resultPanelScriptType = "469e9+YjXZMb6lLQ0nZFBPe";
-const piecePrefabUuid = "9bf31917-81ef-4bb0-ae0f-7f938f0d3573";
-const panelPrefabUuid = "79764185-c340-4a5f-ab8a-ab073eae8f2d";
-const resultPanelPrefabUuid = "1a4d02a8-e19b-47f8-aff5-7be3e47b80e0";
+let panelScriptType = "";
+let pieceScriptType = "";
+let resultPanelScriptType = "";
+let piecePrefabUuid = "";
+const preparedPrefabMetas = new Map();
 // 第 1 关完整图片为 448×448，Prefab 初始尺寸与运行时 3×3 网格保持一致。
 const level001PieceWidth = 448 / 3;
 const level001PieceHeight = 448 / 3;
@@ -24,16 +25,159 @@ const level001PieceHeight = 448 / 3;
 function main() {
   fs.mkdirSync(prefabDir, { recursive: true });
   fs.mkdirSync(popupPrefabDir, { recursive: true });
-  writePrefab("PuzzlePiece", createPiecePrefab(), piecePrefabUuid);
-  writePrefab("UIGamePanel", createPanelPrefab(), panelPrefabUuid);
-  writePrefab(
-    "UIResultPanel",
-    createResultPanelPrefab(),
-    resultPanelPrefabUuid,
-    popupPrefabDir,
+  panelScriptType = resolveCreatorScriptType(
+    "UIGamePanel",
+    "assets/app/ui/game/UIGamePanel.ts.meta",
   );
+  pieceScriptType = resolveCreatorScriptType(
+    "PuzzlePiece",
+    "assets/app/ui/game/PuzzlePiece.ts.meta",
+  );
+  resultPanelScriptType = resolveCreatorScriptType(
+    "UIResultPanel",
+    "assets/app/ui/popup/UIResultPanel.ts.meta",
+  );
+
+  piecePrefabUuid = preparePrefabMeta("PuzzlePiece", prefabDir).uuid;
+  preparePrefabMeta("UIGamePanel", prefabDir);
+  preparePrefabMeta("UIResultPanel", popupPrefabDir);
+  writePrefab("PuzzlePiece", createPiecePrefab());
+  writePrefab("UIGamePanel", createPanelPrefab());
+  writePrefab("UIResultPanel", createResultPanelPrefab(), popupPrefabDir);
   console.log(
     "Generated PuzzlePiece.prefab, UIGamePanel.prefab and UIResultPanel.prefab",
+  );
+}
+
+/**
+ * 从脚本 meta 和 Creator 实际编译产物中取得 Prefab 使用的脚本类型 ID。
+ *
+ * 两边必须一致：meta 防止脚本 UUID 被写死，编译产物用于确认 Creator 已经完成导入，
+ * 避免仅凭算法猜测类型 ID 后生成带 Missing Script 的 Prefab。
+ */
+function resolveCreatorScriptType(className, relativeMetaPath) {
+  const metaPath = path.join(projectRoot, relativeMetaPath);
+  const meta = readJson(metaPath, `${className} 脚本 meta`);
+  if (meta.importer !== "typescript" || !isUuid(meta.uuid)) {
+    throw new Error(`${relativeMetaPath} 缺少有效的 TypeScript UUID。`);
+  }
+
+  const expectedType = compressScriptUuid(meta.uuid);
+  const compiledTypes = findCompiledScriptTypes(className);
+  if (compiledTypes.size === 0) {
+    throw new Error(
+      `Creator 尚未编译 ${className}，请先在 Creator 中重新导入脚本后再运行生成器。`,
+    );
+  }
+  if (compiledTypes.size > 1) {
+    throw new Error(
+      `${className} 在 Creator 编译产物中存在多个类型 ID：${[...compiledTypes].join(", ")}`,
+    );
+  }
+
+  const compiledType = [...compiledTypes][0];
+  if (compiledType !== expectedType) {
+    throw new Error(
+      `${className} 的 meta UUID 与 Creator 编译类型不一致：${expectedType} !== ${compiledType}`,
+    );
+  }
+  return compiledType;
+}
+
+/** 递归扫描 Creator 编辑器编译产物，取得指定 ccclass 的实际类型 ID。 */
+function findCompiledScriptTypes(className) {
+  if (!fs.existsSync(creatorChunkDir)) {
+    throw new Error("找不到 Creator 编辑器编译目录，请先打开项目并完成脚本导入。");
+  }
+
+  const escapedClassName = className.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `_RF\\.push\\(\\{\\},\\s*["']([^"']+)["'],\\s*["']${escapedClassName}["'],\\s*undefined\\)`,
+    "g",
+  );
+  const types = new Set();
+  for (const filePath of listFilesRecursively(creatorChunkDir)) {
+    if (!filePath.endsWith(".js")) {
+      continue;
+    }
+    const content = fs.readFileSync(filePath, "utf8");
+    for (const match of content.matchAll(pattern)) {
+      types.add(match[1]);
+    }
+  }
+  return types;
+}
+
+/** 将 Creator 脚本 UUID 转换为序列化文件使用的压缩类型 ID。 */
+function compressScriptUuid(uuid) {
+  const hex = uuid.replaceAll("-", "").toLowerCase();
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let compressed = hex.slice(0, 5);
+  for (let index = 5; index < hex.length; index += 3) {
+    const value = Number.parseInt(hex.slice(index, index + 3), 16);
+    compressed += alphabet[value >> 6] + alphabet[value & 63];
+  }
+  return compressed;
+}
+
+/** 递归列出目录文件，供编译产物校验使用。 */
+function listFilesRecursively(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(directory, entry.name);
+    return entry.isDirectory() ? listFilesRecursively(entryPath) : [entryPath];
+  });
+}
+
+/**
+ * 读取或创建 Prefab meta。
+ *
+ * 已有 Prefab 必须保留原 UUID；Prefab 存在但 meta 丢失时直接终止，避免重新生成 UUID
+ * 造成其他 Scene、Prefab 中的资源引用静默失效。
+ */
+function preparePrefabMeta(name, outputDir) {
+  const prefabPath = path.join(outputDir, `${name}.prefab`);
+  const metaPath = `${prefabPath}.meta`;
+  if (fs.existsSync(prefabPath) && !fs.existsSync(metaPath)) {
+    throw new Error(`${name}.prefab 已存在但缺少 meta，无法安全保留资源 UUID。`);
+  }
+
+  const meta = fs.existsSync(metaPath)
+    ? readJson(metaPath, `${name} Prefab meta`)
+    : {
+        ver: "1.1.50",
+        importer: "prefab",
+        imported: true,
+        uuid: crypto.randomUUID(),
+        files: [".json"],
+        subMetas: {},
+        userData: {},
+      };
+  if (meta.importer !== "prefab" || !isUuid(meta.uuid)) {
+    throw new Error(`${name}.prefab.meta 缺少有效的 Prefab UUID。`);
+  }
+
+  meta.userData = { ...meta.userData, syncNodeName: name };
+  preparedPrefabMetas.set(prefabPath, { metaPath, meta });
+  return meta;
+}
+
+/** 读取 JSON 文件并补充更明确的错误上下文。 */
+function readJson(filePath, description) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    throw new Error(`读取${description}失败：${filePath}`, { cause: error });
+  }
+}
+
+/** 判断字符串是否为标准 UUID。 */
+function isUuid(value) {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    )
   );
 }
 
@@ -543,26 +687,18 @@ function attachPrefabInfos(objects) {
   }
 }
 
-/** 写入 Prefab 和对应 meta。 */
-function writePrefab(name, objects, uuid, outputDir = prefabDir) {
+/** 写入已经完成结构校验的 Prefab；资源 UUID 由 preparePrefabMeta 单独维护。 */
+function writePrefab(name, objects, outputDir = prefabDir) {
   validatePrefab(name, objects);
   const prefabPath = path.join(outputDir, `${name}.prefab`);
+  const preparedMeta = preparedPrefabMetas.get(prefabPath);
+  if (!preparedMeta) {
+    throw new Error(`${name}.prefab 写入前尚未准备 meta。`);
+  }
   fs.writeFileSync(prefabPath, `${JSON.stringify(objects, null, 2)}\n`, "utf8");
   fs.writeFileSync(
-    `${prefabPath}.meta`,
-    `${JSON.stringify(
-      {
-        ver: "1.1.50",
-        importer: "prefab",
-        imported: true,
-        uuid,
-        files: [".json"],
-        subMetas: {},
-        userData: { syncNodeName: name },
-      },
-      null,
-      2,
-    )}\n`,
+    preparedMeta.metaPath,
+    `${JSON.stringify(preparedMeta.meta, null, 2)}\n`,
     "utf8",
   );
 }

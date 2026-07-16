@@ -14,6 +14,7 @@ import {
 } from "cc";
 import { EventCenter } from "../../core/event/EventCenter";
 import { ResManager } from "../../core/resource/ResManager";
+import type { ResourceHandle } from "../../core/resource/ResManager";
 import { TimerManager } from "../../core/timer/TimerManager";
 import { UIBase } from "../../core/ui/UIBase";
 import { Logger } from "../../core/utils/Logger";
@@ -211,6 +212,9 @@ export class UIGamePanel extends UIBase {
   /** ResManager 持有的当前关卡原图，仅用于创建切片和道具预览。 */
   private _levelSourceFrame: SpriteFrame | null = null;
 
+  /** 当前关卡原图的资源所有权，在所有切片和预览对象销毁后归还。 */
+  private _levelSourceHandle: ResourceHandle<SpriteFrame> | null = null;
+
   /** 是否正在通过道具查看原图，防止连续点击创建重叠的预览任务。 */
   private _toolPreviewRunning = false;
 
@@ -336,18 +340,22 @@ export class UIGamePanel extends UIBase {
     this._toolPreviewRunning = false;
     this.resetLevelTimer();
 
+    let loadingHandle: ResourceHandle<SpriteFrame> | null = null;
     try {
       // 关卡资源按 SpriteFrame 导入，裁切器使用完整底层纹理生成网格运行时切图。
-      const sourceFrame = await ResManager.load(
+      loadingHandle = await ResManager.acquire(
         this.levelConfig.sourceImagePath,
         SpriteFrame,
       );
       if (!this.node.isValid || requestId !== this._levelRequestId) {
         return;
       }
+      const sourceFrame = loadingHandle.asset;
 
       // 关卡原图必须保持不可变，避免预览渲染后缓存对象被动态图集替换纹理。
       this.prepareSourceFrame(sourceFrame);
+      this._levelSourceHandle = loadingHandle;
+      loadingHandle = null;
       this._levelSourceFrame = sourceFrame;
       this._pieceFrames = PuzzleImageSlicer.slice(
         sourceFrame,
@@ -396,6 +404,9 @@ export class UIGamePanel extends UIBase {
       this.clearPieces();
       this.feedbackLabel!.string = `第 ${this.levelConfig.level} 关图片加载失败，请查看控制台`;
       Logger.error(`创建第 ${this.levelConfig.level} 关拼图失败。`, error);
+    } finally {
+      // 请求若在加载完成前已被重玩或关闭，所有权尚未转交给面板，必须在此立即归还。
+      loadingHandle?.release();
     }
   }
 
@@ -1094,6 +1105,12 @@ export class UIGamePanel extends UIBase {
     this._pieceFrames = [];
     this.releaseSourcePreviewFrame();
     this._levelSourceFrame = null;
+    // Creator 会在帧末完成 destroy；延迟到下一轮任务再释放共享纹理，避免派生帧尚未销毁。
+    const sourceHandle = this._levelSourceHandle;
+    if (sourceHandle) {
+      TimerManager.delay(() => sourceHandle.release(), 0);
+    }
+    this._levelSourceHandle = null;
     this._toolPreviewRunning = false;
   }
 }
