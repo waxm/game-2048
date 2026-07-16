@@ -1,3 +1,5 @@
+import { Logger } from "../utils/Logger";
+
 /**
  * 事件回调函数类型。
  *
@@ -96,10 +98,21 @@ export class EventCenter {
         const currentListeners = listeners.slice();
 
         for (const listener of currentListeners) {
-            listener.callback(data);
+            // 前一个回调可能已经注销后续监听；已不在正式列表中的快照项不得继续执行。
+            if ((this._listeners.get(eventName)?.indexOf(listener) ?? -1) < 0) {
+                continue;
+            }
 
             if (listener.once) {
-                this.off(eventName, listener.callback, listener.target);
+                // 必须在执行回调前移除，避免回调内部再次 emit 时一次性监听被触发第二次。
+                this.removeListener(eventName, listener);
+            }
+
+            try {
+                listener.callback(data);
+            } catch (error) {
+                // 单个模块的监听异常不能阻断其他模块接收同一事件。
+                Logger.error(`事件监听执行失败：${eventName}`, error);
             }
         }
     }
@@ -115,7 +128,8 @@ export class EventCenter {
             return;
         }
 
-        for (const eventName of this._listeners.keys()) {
+        // 删除 Map 项时使用键快照，避免不同 JavaScript 运行环境的迭代行为差异。
+        for (const eventName of Array.from(this._listeners.keys())) {
             this.off(eventName, undefined, target);
         }
     }
@@ -135,6 +149,17 @@ export class EventCenter {
     private static addListener(eventName: string, callback: EventCallback, target: unknown, once: boolean): void {
         const listeners = this._listeners.get(eventName) ?? [];
 
+        // 同一归属对象重复执行生命周期注册时保持幂等，避免一次事件响应多次。
+        const duplicated = listeners.some(
+            (listener) =>
+                listener.callback === callback &&
+                listener.target === target &&
+                listener.once === once,
+        );
+        if (duplicated) {
+            return;
+        }
+
         listeners.push({
             callback,
             target,
@@ -142,5 +167,20 @@ export class EventCenter {
         });
 
         this._listeners.set(eventName, listeners);
+    }
+
+    /** 按监听对象身份精确移除一项，避免 once 误删后来重新注册的同回调监听。 */
+    private static removeListener(eventName: string, listenerToRemove: EventListener): void {
+        const listeners = this._listeners.get(eventName);
+        if (!listeners) {
+            return;
+        }
+
+        const nextListeners = listeners.filter((listener) => listener !== listenerToRemove);
+        if (nextListeners.length > 0) {
+            this._listeners.set(eventName, nextListeners);
+        } else {
+            this._listeners.delete(eventName);
+        }
     }
 }
