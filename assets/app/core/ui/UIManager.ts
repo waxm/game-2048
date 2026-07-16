@@ -124,6 +124,7 @@ export class UIManager {
 
         const openedPanel = this._openedPanels.get(name);
         if (openedPanel?.node.isValid) {
+            // open 只负责打开生命周期；已打开面板的数据变化由面板内部监听并刷新。
             if (!openedPanel.node.active) {
                 openedPanel.show();
             }
@@ -137,6 +138,7 @@ export class UIManager {
 
         const openingPromise = this._openingPromises.get(name);
         if (openingPromise) {
+            // 加载中的重复请求直接复用首次任务，避免参数变化导致初始化逻辑重复执行。
             return openingPromise as Promise<T | null>;
         }
 
@@ -351,6 +353,9 @@ export class UIManager {
             node = await ResManager.instantiatePrefab(config.path, {
                 bundleName: config.bundleName,
             });
+
+            // 新实例挂到场景前先保持隐藏，避免 Prefab 默认文本在业务数据填充前显示一帧。
+            node.active = false;
         }
 
         if (this._root && node.parent !== this._root) {
