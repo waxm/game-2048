@@ -9,7 +9,6 @@ import {
   Prefab,
   Sprite,
   SpriteFrame,
-  UITransform,
   Vec3,
 } from "cc";
 import { EventCenter } from "../../core/event/EventCenter";
@@ -36,18 +35,6 @@ interface PieceRuntime {
   piece: PuzzlePiece;
 }
 
-/** 本次吸附计算得到的最佳候选。 */
-interface SnapCandidate {
-  /** 被拖动组合需要整体修正的位移。 */
-  correction: Vec3;
-
-  /** 即将合并的另一个组合编号。 */
-  targetClusterId: number;
-
-  /** 当前候选距离，用于选择最近的正确邻块。 */
-  distance: number;
-}
-
 /** 打开拼图面板时必须传入的关卡参数。 */
 export interface UIGamePanelOpenParams {
   /** 当前需要创建和展示的关卡配置。 */
@@ -62,12 +49,6 @@ export class UIGamePanel extends UIBase {
 
   /** 增加时间道具单次补充的秒数。 */
   private static readonly TIME_TOOL_BONUS_SECONDS = 10;
-
-  /** 初始网格中格子之间的空隙，吸附成功后该空隙会归零。 */
-  private static readonly INITIAL_GRID_GAP = 20;
-
-  /** 拼图与容器边缘之间保留的最小距离，避免贴边后难以再次拖动。 */
-  private static readonly DRAG_BOUNDARY_PADDING = 8;
 
   /** 时间进度条的完整宽度。 */
   private static readonly TIMER_BAR_WIDTH = 448;
@@ -146,11 +127,20 @@ export class UIGamePanel extends UIBase {
   /** 拼图编号到运行实例的映射。 */
   private readonly _pieces = new Map<number, PieceRuntime>();
 
-  /** 组合编号到组合内拼图编号集合的映射。 */
-  private readonly _clusters = new Map<number, Set<number>>();
+  /** 按显示格子编号保存当前占用该格子的拼图编号。 */
+  private readonly _pieceIdsByCell: number[] = [];
 
-  /** 拼图编号到当前所属组合编号的映射。 */
-  private readonly _pieceClusterIds = new Map<number, number>();
+  /** 拼图编号到当前显示格子编号的反向索引。 */
+  private readonly _cellIndexByPieceId = new Map<number, number>();
+
+  /** 拼图编号到当前正确连接组合的映射；未连接块对应只包含自己的集合。 */
+  private readonly _connectedGroupByPieceId = new Map<number, Set<number>>();
+
+  /** 本次正在整体拖动的拼图编号集合。 */
+  private _draggingPieceIds: Set<number> | null = null;
+
+  /** 本次拖拽开始时各拼图所在格子，用于验证目标区域和失败复位。 */
+  private readonly _dragOriginCells = new Map<number, number>();
 
   /** 是否已注册按钮和状态事件。 */
   private _eventsBound = false;
@@ -163,9 +153,6 @@ export class UIGamePanel extends UIBase {
 
   /** 当前关卡单块拼图的显示高度。 */
   private _pieceHeight = 0;
-
-  /** 当前关卡允许触发吸附的最大位置误差。 */
-  private _snapDistance = 0;
 
   /** 当前关卡的规则网格，统一处理上下左右邻接关系。 */
   private _grid: PuzzleGrid | null = null;
@@ -298,12 +285,11 @@ export class UIGamePanel extends UIBase {
     return params.levelConfig as PuzzleLevelConfig;
   }
 
-  /** 根据当前关卡配置准备切片尺寸、吸附阈值和网格规则。 */
+  /** 根据当前关卡配置准备切片尺寸和网格规则。 */
   private configureLevel(levelConfig: PuzzleLevelConfig): void {
     this._levelConfig = levelConfig;
     this._pieceWidth = levelConfig.boardWidth / levelConfig.columns;
     this._pieceHeight = levelConfig.boardHeight / levelConfig.rows;
-    this._snapDistance = Math.min(this._pieceWidth, this._pieceHeight) * 0.34;
     this._grid = new PuzzleGrid(
       levelConfig.rows,
       levelConfig.columns,
@@ -379,7 +365,7 @@ export class UIGamePanel extends UIBase {
         }
 
         this.puzzleContainer!.addChild(pieceNode);
-        pieceNode.setPosition(this.getInitialGridPosition(displayIndex));
+        pieceNode.setPosition(this.getGridPosition(displayIndex));
         piece.setDisplaySize(this._pieceWidth, this._pieceHeight);
         piece.setData({
           id: pieceId,
@@ -389,13 +375,12 @@ export class UIGamePanel extends UIBase {
           onDrop: this.onPieceDrop,
         });
         this._pieces.set(pieceId, { piece });
-
-        // 每块拼图初始都是独立组合，组合编号直接使用拼图编号，便于排错。
-        this._clusters.set(pieceId, new Set([pieceId]));
-        this._pieceClusterIds.set(pieceId, pieceId);
+        this._pieceIdsByCell[displayIndex] = pieceId;
+        this._cellIndexByPieceId.set(pieceId, displayIndex);
       });
-      this.feedbackLabel!.string = "拖动相邻图片，让正确边缘靠近";
+      this.feedbackLabel!.string = "拖动图片到目标格，与格内图片交换位置";
       this.startLevelTimer();
+      this.refreshConnectedState(true);
     } catch (error) {
       if (!this.node.isValid || requestId !== this._levelRequestId) {
         return;
@@ -578,6 +563,8 @@ export class UIGamePanel extends UIBase {
     }
     this._timerRunning = false;
     this._failed = true;
+    this.restoreDraggingGroup();
+    this.clearDraggingState();
     this._pieces.forEach((runtime) => runtime.piece.setInteractable(false));
     this.feedbackLabel!.string = "时间到，本关失败";
     EventCenter.emit(GameEvent.PuzzleTimeExpired);
@@ -641,33 +628,33 @@ export class UIGamePanel extends UIBase {
     this.feedbackLabel!.string = "继续拖动相邻图片完成拼接";
   }
 
-  /** 使用自动组合道具，完成一次正确邻接合并并同步控制器进度。 */
+  /** 使用自动组合道具，通过一次格子交换制造一组正确邻接。 */
   private onAutoMergeTool = (): void => {
     if (!this.canUseGameTool()) {
       return;
     }
 
-    const mergedCluster = this.mergeOneAdjacentCluster();
-    if (!mergedCluster) {
+    const connectedPieceIds = this.connectOneAdjacentPair();
+    if (!connectedPieceIds) {
       this.feedbackLabel!.string = "当前没有可自动组合的拼图";
       return;
     }
 
     this.feedbackLabel!.string = "已自动组合 1 块";
     const request: PuzzlePieceDropRequest = {
-      connectedPieceIds: [...mergedCluster],
+      connectedPieceIds,
       fromAutoMergeTool: true,
     };
     EventCenter.emit(GameEvent.PuzzlePieceDropRequest, request);
   };
 
   /**
-   * 按拼图编号顺序寻找一对尚未连接的正确邻块，并完成一次组合合并。
+   * 按拼图编号顺序寻找一对尚未正确相邻的原图邻块，并交换一个目标格。
    *
-   * 自动组合使用与拖拽吸附相同的网格相对位置，合并后仍然是普通组合，
-   * 玩家可以继续拖动其中任意一块带动整个组合。
+   * 道具不直接修改节点坐标，而是先计算移动块在目标块旁边应占用的格子，再走
+   * 普通交换函数，确保自动操作与玩家拖拽只有一套格子占用状态。
    */
-  private mergeOneAdjacentCluster(): Set<number> | null {
+  private connectOneAdjacentPair(): number[] | null {
     const pieceIds = [...this._pieces.keys()].sort((a, b) => a - b);
     for (const movingId of pieceIds) {
       for (const targetId of pieceIds) {
@@ -678,315 +665,398 @@ export class UIGamePanel extends UIBase {
           continue;
         }
 
-        const movingClusterId = this._pieceClusterIds.get(movingId);
-        const targetClusterId = this._pieceClusterIds.get(targetId);
+        const movingCellIndex = this._cellIndexByPieceId.get(movingId);
+        const targetCellIndex = this._cellIndexByPieceId.get(targetId);
+        if (movingCellIndex === undefined || targetCellIndex === undefined) {
+          continue;
+        }
+        if ((this._connectedGroupByPieceId.get(movingId)?.size ?? 0) > 1) {
+          continue;
+        }
         if (
-          movingClusterId === undefined ||
-          targetClusterId === undefined ||
-          movingClusterId === targetClusterId
+          this.isCorrectlyConnected(
+            movingId,
+            movingCellIndex,
+            targetId,
+            targetCellIndex,
+          )
         ) {
           continue;
         }
 
-        const movingCluster = this._clusters.get(movingClusterId);
-        const targetCluster = this._clusters.get(targetClusterId);
-        const movingPiece = this._pieces.get(movingId);
-        const targetPiece = this._pieces.get(targetId);
-        if (!movingCluster || !targetCluster || !movingPiece || !targetPiece) {
+        const movingOriginalCell = this.grid.getCell(movingId);
+        const targetOriginalCell = this.grid.getCell(targetId);
+        const targetDisplayCell = this.grid.getCell(targetCellIndex);
+        const desiredRow =
+          targetDisplayCell.row +
+          movingOriginalCell.row -
+          targetOriginalCell.row;
+        const desiredColumn =
+          targetDisplayCell.column +
+          movingOriginalCell.column -
+          targetOriginalCell.column;
+        const desiredCellIndex = this.getCellIndex(
+          desiredRow,
+          desiredColumn,
+        );
+        if (desiredCellIndex === null) {
+          continue;
+        }
+        const displacedPieceId = this._pieceIdsByCell[desiredCellIndex];
+        if (
+          (this._connectedGroupByPieceId.get(displacedPieceId)?.size ?? 0) > 1
+        ) {
           continue;
         }
 
-        const relativeOffset = this.grid.getRelativeOffset(
-          movingId,
-          targetId,
-        );
-        const correction = new Vec3(
-          targetPiece.piece.node.position.x +
-            relativeOffset.x -
-            movingPiece.piece.node.position.x,
-          targetPiece.piece.node.position.y +
-            relativeOffset.y -
-            movingPiece.piece.node.position.y,
-          0,
-        );
-        this.moveCluster(movingCluster, correction);
-
-        targetCluster.forEach((pieceId) => {
-          movingCluster.add(pieceId);
-          this._pieceClusterIds.set(pieceId, movingClusterId);
-        });
-        this._clusters.delete(targetClusterId);
-        this.moveClusterWithinBounds(movingCluster, new Vec3());
-        return movingCluster;
+        this.swapPieceToCell(movingId, desiredCellIndex);
+        return this.refreshConnectedState(false);
       }
     }
     return null;
   }
 
   /**
-   * 根据展示序号生成整齐的初始格位。
+   * 根据格子序号生成无间隙的规则网格中心坐标。
    *
-   * 图片块按 pieceOrder 打乱，但节点中心始终落在规则网格上，保证初始界面整洁。
+   * 未连接底框虽然会内缩，但根节点和格子坐标不留空隙；连接后完整切片会自然
+   * 覆盖整个格子并与上下左右的正确切片严丝合缝。
    */
-  private getInitialGridPosition(displayIndex: number): Vec3 {
-    const displayRow = Math.floor(displayIndex / this.levelConfig.columns);
-    const displayColumn = displayIndex % this.levelConfig.columns;
-    const stepX = this._pieceWidth + UIGamePanel.INITIAL_GRID_GAP;
-    const stepY = this._pieceHeight + UIGamePanel.INITIAL_GRID_GAP;
+  private getGridPosition(cellIndex: number): Vec3 {
+    const cell = this.grid.getCell(cellIndex);
     const x =
-      (displayColumn - (this.levelConfig.columns - 1) / 2) * stepX;
+      (cell.column - (this.levelConfig.columns - 1) / 2) * this._pieceWidth;
     const y =
-      40 + ((this.levelConfig.rows - 1) / 2 - displayRow) * stepY;
+      40 +
+      ((this.levelConfig.rows - 1) / 2 - cell.row) * this._pieceHeight;
     return new Vec3(x, y, 0);
   }
 
-  /** 开始拖动时把当前组合整体提升到其他拼图上方。 */
+  /** 开始拖动时记录整个连接组合的原始格子，并统一提升显示层级。 */
   private onPieceDragStart = (pieceId: number): void => {
     if (this._completed || this._failed) {
       return;
     }
-    const cluster = this.getPieceCluster(pieceId);
-    if (!cluster) {
+    const connectedGroup = this._connectedGroupByPieceId.get(pieceId);
+    if (!connectedGroup) {
       return;
     }
 
-    cluster.forEach((id) => {
-      const node = this._pieces.get(id)?.piece.node;
-      if (node) {
-        node.setSiblingIndex(node.parent!.children.length - 1);
+    this._draggingPieceIds = new Set(connectedGroup);
+    this._dragOriginCells.clear();
+    this._draggingPieceIds.forEach((id) => {
+      const runtime = this._pieces.get(id);
+      const cellIndex = this._cellIndexByPieceId.get(id);
+      if (!runtime || cellIndex === undefined) {
+        throw new Error(`拖拽组合缺少拼图 ${id} 的运行状态。`);
       }
+      this._dragOriginCells.set(id, cellIndex);
+      runtime.piece.node.setSiblingIndex(
+        runtime.piece.node.parent!.children.length - 1,
+      );
     });
   };
 
-  /** 使用同一份位移增量移动组合内所有拼图，保持已吸附边缘不被拖散。 */
+  /** 拖动过程中为组合内每块拼图应用相同位移，保持已经连接的边缘不被拉开。 */
   private onPieceDragMove = (pieceId: number, delta: Vec3): void => {
     if (this._completed || this._failed) {
       return;
     }
-    const cluster = this.getPieceCluster(pieceId);
-    if (!cluster) {
+    if (!this._draggingPieceIds?.has(pieceId)) {
       return;
     }
-    this.moveClusterWithinBounds(cluster, delta);
+    this._draggingPieceIds.forEach((id) => {
+      const node = this._pieces.get(id)!.piece.node;
+      node.setPosition(
+        node.position.x + delta.x,
+        node.position.y + delta.y,
+        0,
+      );
+    });
   };
 
-  /** 松手时反复吸附附近的正确邻块，并把新组合结果交给控制器统计。 */
+  /**
+   * 松手时验证整个组合是否能够平移到目标格。
+   *
+   * 目标区域越界或会拆散其他已连接组合时，本次拖拽失败并完整复位；验证通过后
+   * 才一次性更新格子占用，避免部分拼图已经落格、其余拼图仍在原位。
+   */
   private onPieceDrop = (pieceId: number): void => {
     if (this._completed || this._failed) {
       return;
     }
 
-    const clusterId = this._pieceClusterIds.get(pieceId);
-    if (clusterId === undefined) {
+    const runtime = this._pieces.get(pieceId);
+    const sourceCellIndex = this._dragOriginCells.get(pieceId);
+    if (
+      !runtime ||
+      sourceCellIndex === undefined ||
+      !this._draggingPieceIds?.has(pieceId)
+    ) {
       return;
     }
 
-    let merged = false;
-    // 一次放下可能同时对齐多个组合，因此持续合并到附近没有新邻块为止。
-    while (this.tryMergeCluster(clusterId)) {
-      merged = true;
-    }
-
-    const cluster = this._clusters.get(clusterId);
-    if (!merged || !cluster) {
-      this.feedbackLabel!.string = "继续靠近正确的相邻边缘";
+    const targetCellIndex =
+      this.getNearestGridCellIndex(runtime.piece.node.position) ?? -1;
+    const placed = this.tryPlaceDraggingGroup(pieceId, targetCellIndex);
+    if (!placed) {
+      this.restoreDraggingGroup();
+      this.feedbackLabel!.string = "当前位置无法容纳整个组合，已返回原位";
+      this.clearDraggingState();
       return;
     }
 
-    this.feedbackLabel!.string = `已拼接 ${cluster.size} 块`;
-    const request: PuzzlePieceDropRequest = {
-      connectedPieceIds: [...cluster],
-    };
-    EventCenter.emit(GameEvent.PuzzlePieceDropRequest, request);
+    const connectedPieceIds = this.refreshConnectedState(true);
+    this.feedbackLabel!.string =
+      connectedPieceIds.length >= 2
+        ? `已连接 ${connectedPieceIds.length} 块`
+        : "组合已放入目标格，继续寻找正确相邻位置";
+    this.clearDraggingState();
   };
 
   /**
-   * 为指定组合查找最近的正确邻块并完成一次合并。
+   * 尝试把当前拖拽组合整体平移到目标格。
    *
-   * 正确位置不依赖固定目标格，而是由两块图片在原图中的行列差计算；
-   * 这样完整图片可以在画布任意位置拼成，并支持不规则组合继续参与吸附。
+   * 新占用格中的未连接单块会被置换到组合腾出的原格；若目标格包含另一个已连接
+   * 组合，则拒绝本次放置，防止只替换其中一块导致已经完成的连接被拆散。
    */
-  private tryMergeCluster(clusterId: number): boolean {
-    const draggedCluster = this._clusters.get(clusterId);
-    if (!draggedCluster) {
+  private tryPlaceDraggingGroup(
+    anchorPieceId: number,
+    targetAnchorCellIndex: number,
+  ): boolean {
+    if (!this._draggingPieceIds || targetAnchorCellIndex < 0) {
+      return false;
+    }
+    const sourceAnchorCellIndex = this._dragOriginCells.get(anchorPieceId);
+    if (sourceAnchorCellIndex === undefined) {
       return false;
     }
 
-    let bestCandidate: SnapCandidate | null = null;
-    draggedCluster.forEach((draggedId) => {
-      const dragged = this._pieces.get(draggedId);
-      if (!dragged) {
-        return;
+    const sourceAnchorCell = this.grid.getCell(sourceAnchorCellIndex);
+    const targetAnchorCell = this.grid.getCell(targetAnchorCellIndex);
+    const rowOffset = targetAnchorCell.row - sourceAnchorCell.row;
+    const columnOffset = targetAnchorCell.column - sourceAnchorCell.column;
+    const destinationCells = new Map<number, number>();
+
+    for (const id of this._draggingPieceIds) {
+      const sourceCellIndex = this._dragOriginCells.get(id)!;
+      const sourceCell = this.grid.getCell(sourceCellIndex);
+      const destinationCellIndex = this.getCellIndex(
+        sourceCell.row + rowOffset,
+        sourceCell.column + columnOffset,
+      );
+      if (destinationCellIndex === null) {
+        return false;
       }
+      destinationCells.set(id, destinationCellIndex);
+    }
 
-      this._pieces.forEach((target, targetId) => {
-        if (draggedCluster.has(targetId)) {
+    const sourceCellSet = new Set(this._dragOriginCells.values());
+    const destinationCellSet = new Set(destinationCells.values());
+    const destinationOnlyCells = [...destinationCellSet]
+      .filter((cellIndex) => !sourceCellSet.has(cellIndex))
+      .sort((first, second) => first - second);
+    const sourceOnlyCells = [...sourceCellSet]
+      .filter((cellIndex) => !destinationCellSet.has(cellIndex))
+      .sort((first, second) => first - second);
+
+    const displacedPieceIds: number[] = [];
+    for (const cellIndex of destinationOnlyCells) {
+      const occupantId = this._pieceIdsByCell[cellIndex];
+      const occupantGroup = this._connectedGroupByPieceId.get(occupantId);
+      if (!occupantGroup || occupantGroup.size > 1) {
+        return false;
+      }
+      displacedPieceIds.push(occupantId);
+    }
+    if (displacedPieceIds.length !== sourceOnlyCells.length) {
+      return false;
+    }
+
+    destinationCells.forEach((cellIndex, id) => {
+      this._pieceIdsByCell[cellIndex] = id;
+      this._cellIndexByPieceId.set(id, cellIndex);
+      this._pieces.get(id)!.piece.node.setPosition(
+        this.getGridPosition(cellIndex),
+      );
+    });
+    displacedPieceIds.forEach((id, index) => {
+      const cellIndex = sourceOnlyCells[index];
+      this._pieceIdsByCell[cellIndex] = id;
+      this._cellIndexByPieceId.set(id, cellIndex);
+      this._pieces.get(id)!.piece.node.setPosition(
+        this.getGridPosition(cellIndex),
+      );
+    });
+    return true;
+  }
+
+  /** 放置失败时根据拖拽开始前记录的格子复位整个组合。 */
+  private restoreDraggingGroup(): void {
+    this._dragOriginCells.forEach((cellIndex, id) => {
+      this._pieces.get(id)?.piece.node.setPosition(
+        this.getGridPosition(cellIndex),
+      );
+    });
+  }
+
+  /** 清空本轮拖拽的临时引用；允许在成功和失败路径重复调用。 */
+  private clearDraggingState(): void {
+    this._draggingPieceIds = null;
+    this._dragOriginCells.clear();
+  }
+
+  /**
+   * 将指定拼图交换到目标格，并让被占用的拼图回到来源格。
+   *
+   * 所有映射与节点位置在同一个函数内更新，防止快速连续拖动时出现两个拼图
+   * 指向同一格，或逻辑占用位置与画面位置不一致。
+   */
+  private swapPieceToCell(pieceId: number, targetCellIndex: number): void {
+    const sourceCellIndex = this._cellIndexByPieceId.get(pieceId);
+    const targetPieceId = this._pieceIdsByCell[targetCellIndex];
+    if (sourceCellIndex === undefined || targetPieceId === undefined) {
+      throw new Error(
+        `拼图格子占用状态异常：piece=${pieceId}，target=${targetCellIndex}`,
+      );
+    }
+
+    this._pieceIdsByCell[sourceCellIndex] = targetPieceId;
+    this._pieceIdsByCell[targetCellIndex] = pieceId;
+    this._cellIndexByPieceId.set(pieceId, targetCellIndex);
+    this._cellIndexByPieceId.set(targetPieceId, sourceCellIndex);
+    this._pieces
+      .get(pieceId)!
+      .piece.node.setPosition(this.getGridPosition(targetCellIndex));
+    this._pieces
+      .get(targetPieceId)!
+      .piece.node.setPosition(this.getGridPosition(sourceCellIndex));
+  }
+
+  /** 根据拖拽节点中心取得最近格子；超出棋盘半格范围时判定为无效落点。 */
+  private getNearestGridCellIndex(position: Readonly<Vec3>): number | null {
+    const column = Math.round(
+      position.x / this._pieceWidth +
+        (this.levelConfig.columns - 1) / 2,
+    );
+    const row = Math.round(
+      (40 - position.y) / this._pieceHeight +
+        (this.levelConfig.rows - 1) / 2,
+    );
+    return this.getCellIndex(row, column);
+  }
+
+  /** 把合法行列转换为格子编号，越界时返回 null。 */
+  private getCellIndex(row: number, column: number): number | null {
+    if (
+      row < 0 ||
+      row >= this.levelConfig.rows ||
+      column < 0 ||
+      column >= this.levelConfig.columns
+    ) {
+      return null;
+    }
+    return row * this.levelConfig.columns + column;
+  }
+
+  /** 判断两块图片在当前格子中的方向是否与它们在原图中的方向完全一致。 */
+  private isCorrectlyConnected(
+    firstPieceId: number,
+    firstCellIndex: number,
+    secondPieceId: number,
+    secondCellIndex: number,
+  ): boolean {
+    const firstOriginal = this.grid.getCell(firstPieceId);
+    const secondOriginal = this.grid.getCell(secondPieceId);
+    const firstCurrent = this.grid.getCell(firstCellIndex);
+    const secondCurrent = this.grid.getCell(secondCellIndex);
+    return (
+      secondOriginal.row - firstOriginal.row ===
+        secondCurrent.row - firstCurrent.row &&
+      secondOriginal.column - firstOriginal.column ===
+        secondCurrent.column - firstCurrent.column
+    );
+  }
+
+  /**
+   * 重算当前棋盘上的正确连接分组，并同步每块拼图的背景与裁剪状态。
+   *
+   * 交换可能建立也可能拆开旧连接，因此不能沿用只增不减的组合缓存。这里每次
+   * 仅检查右侧和下侧邻格构建关系图，再用深度优先遍历得到真实连接分组。
+   */
+  private refreshConnectedState(emitState: boolean): number[] {
+    const adjacency = new Map<number, Set<number>>();
+    this._connectedGroupByPieceId.clear();
+    this._pieces.forEach((_runtime, pieceId) => {
+      adjacency.set(pieceId, new Set());
+    });
+
+    this._pieceIdsByCell.forEach((pieceId, cellIndex) => {
+      const cell = this.grid.getCell(cellIndex);
+      const neighborIndices = [
+        this.getCellIndex(cell.row, cell.column + 1),
+        this.getCellIndex(cell.row + 1, cell.column),
+      ];
+      neighborIndices.forEach((neighborIndex) => {
+        if (neighborIndex === null) {
           return;
         }
-
-        if (!this.grid.areAdjacent(draggedId, targetId)) {
-          return;
-        }
-
-        const relativeOffset = this.grid.getRelativeOffset(
-          draggedId,
-          targetId,
-        );
-        const expectedPosition = new Vec3(
-          target.piece.node.position.x + relativeOffset.x,
-          target.piece.node.position.y + relativeOffset.y,
-          0,
-        );
-        const correction = new Vec3(
-          expectedPosition.x - dragged.piece.node.position.x,
-          expectedPosition.y - dragged.piece.node.position.y,
-          0,
-        );
-        const distance = correction.length();
+        const neighborPieceId = this._pieceIdsByCell[neighborIndex];
         if (
-          distance <= this._snapDistance &&
-          (!bestCandidate || distance < bestCandidate.distance)
+          this.isCorrectlyConnected(
+            pieceId,
+            cellIndex,
+            neighborPieceId,
+            neighborIndex,
+          )
         ) {
-          bestCandidate = {
-            correction,
-            targetClusterId: this._pieceClusterIds.get(targetId)!,
-            distance,
-          };
+          adjacency.get(pieceId)!.add(neighborPieceId);
+          adjacency.get(neighborPieceId)!.add(pieceId);
         }
       });
     });
 
-    if (!bestCandidate) {
-      return false;
-    }
-
-    this.moveCluster(draggedCluster, bestCandidate.correction);
-    const targetCluster = this._clusters.get(bestCandidate.targetClusterId);
-    if (!targetCluster) {
-      return false;
-    }
-
-    // 合并后统一改为被拖动组合的编号，后续拖动其中任意块都会移动完整组合。
-    targetCluster.forEach((id) => {
-      draggedCluster.add(id);
-      this._pieceClusterIds.set(id, clusterId);
-    });
-    this._clusters.delete(bestCandidate.targetClusterId);
-
-    // 边缘附近完成吸附时，整体回到容器范围内，且不改变拼图之间的正确位置。
-    this.moveClusterWithinBounds(draggedCluster, new Vec3());
-    return true;
-  }
-
-  /**
-   * 在拼图容器范围内移动整个组合。
-   *
-   * 先计算组合移动后的外接矩形，再统一修正位移，确保组合内每块拼图使用
-   * 完全相同的增量，避免已经吸附的边缘被边界限制重新拉开。
-   */
-  private moveClusterWithinBounds(
-    cluster: Set<number>,
-    requestedDelta: Vec3,
-  ): void {
-    const containerTransform = this.puzzleContainer!.getComponent(UITransform);
-    if (!containerTransform) {
-      throw new Error("UIGamePanel.puzzleContainer 缺少 UITransform 组件。");
-    }
-
-    const halfPieceWidth = this._pieceWidth / 2;
-    const halfPieceHeight = this._pieceHeight / 2;
-    let minX = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
-
-    cluster.forEach((id) => {
-      const node = this._pieces.get(id)?.piece.node;
-      if (!node) {
+    const visited = new Set<number>();
+    let largestConnectedPieceIds: number[] = [];
+    adjacency.forEach((_neighbors, pieceId) => {
+      if (visited.has(pieceId)) {
         return;
       }
-      minX = Math.min(minX, node.position.x - halfPieceWidth);
-      maxX = Math.max(maxX, node.position.x + halfPieceWidth);
-      minY = Math.min(minY, node.position.y - halfPieceHeight);
-      maxY = Math.max(maxY, node.position.y + halfPieceHeight);
-    });
-
-    if (!Number.isFinite(minX)) {
-      return;
-    }
-
-    const size = containerTransform.contentSize;
-    const anchor = containerTransform.anchorPoint;
-    const padding = UIGamePanel.DRAG_BOUNDARY_PADDING;
-    const left = -size.width * anchor.x + padding;
-    const right = size.width * (1 - anchor.x) - padding;
-    const bottom = -size.height * anchor.y + padding;
-    const top = size.height * (1 - anchor.y) - padding;
-    const boundedDelta = new Vec3(requestedDelta);
-
-    boundedDelta.x = this.clampAxisDelta(
-      minX,
-      maxX,
-      boundedDelta.x,
-      left,
-      right,
-    );
-    boundedDelta.y = this.clampAxisDelta(
-      minY,
-      maxY,
-      boundedDelta.y,
-      bottom,
-      top,
-    );
-    this.moveCluster(cluster, boundedDelta);
-  }
-
-  /**
-   * 修正单个坐标轴上的位移，使移动后的组合范围不超过容器边界。
-   *
-   * 当前关卡组合始终小于容器；额外保留超宽保护，避免未来关卡尺寸配置错误时
-   * 在两侧边界之间反复修正导致位置抖动。
-   */
-  private clampAxisDelta(
-    clusterMin: number,
-    clusterMax: number,
-    requestedDelta: number,
-    boundaryMin: number,
-    boundaryMax: number,
-  ): number {
-    const clusterSize = clusterMax - clusterMin;
-    const boundarySize = boundaryMax - boundaryMin;
-    if (clusterSize > boundarySize) {
-      const clusterCenter = (clusterMin + clusterMax) / 2;
-      const boundaryCenter = (boundaryMin + boundaryMax) / 2;
-      return boundaryCenter - clusterCenter;
-    }
-
-    const minimumDelta = boundaryMin - clusterMin;
-    const maximumDelta = boundaryMax - clusterMax;
-    return Math.max(minimumDelta, Math.min(requestedDelta, maximumDelta));
-  }
-
-  /** 将组合内所有拼图移动相同距离。 */
-  private moveCluster(cluster: Set<number>, delta: Vec3): void {
-    cluster.forEach((id) => {
-      const node = this._pieces.get(id)?.piece.node;
-      if (node) {
-        node.setPosition(
-          node.position.x + delta.x,
-          node.position.y + delta.y,
-          0,
-        );
+      const component: number[] = [];
+      const pending = [pieceId];
+      while (pending.length > 0) {
+        const currentId = pending.pop()!;
+        if (visited.has(currentId)) {
+          continue;
+        }
+        visited.add(currentId);
+        component.push(currentId);
+        adjacency.get(currentId)!.forEach((neighborId) => {
+          if (!visited.has(neighborId)) {
+            pending.push(neighborId);
+          }
+        });
       }
+      if (component.length > largestConnectedPieceIds.length) {
+        largestConnectedPieceIds = component;
+      }
+      const connectedGroup = new Set(component);
+      const connected = component.length >= 2;
+      component.forEach((id) => {
+        this._connectedGroupByPieceId.set(id, connectedGroup);
+        this._pieces.get(id)!.piece.setConnected(connected);
+      });
     });
-  }
 
-  /** 获取拼图当前所属的组合。 */
-  private getPieceCluster(pieceId: number): Set<number> | null {
-    const clusterId = this._pieceClusterIds.get(pieceId);
-    return clusterId === undefined
-      ? null
-      : (this._clusters.get(clusterId) ?? null);
+    const reportedPieceIds =
+      largestConnectedPieceIds.length >= 2 ? largestConnectedPieceIds : [];
+    if (emitState) {
+      const request: PuzzlePieceDropRequest = {
+        connectedPieceIds: reportedPieceIds,
+      };
+      EventCenter.emit(GameEvent.PuzzlePieceDropRequest, request);
+    }
+    return reportedPieceIds;
   }
 
   /** 刷新已连接数量和关卡锁定状态。 */
@@ -1002,31 +1072,15 @@ export class UIGamePanel extends UIBase {
     this.progressLabel!.string = `已连接 ${state.placedCount} / ${state.totalCount}`;
   };
 
-  /** 通关后把完整图片移动到界面中心并锁定拖拽。 */
+  /** 通关后保持完整图片位于规则棋盘，并锁定全部拖拽输入。 */
   private onCompleted = (): void => {
     this.stopLevelTimer();
-    const allPieces = new Set(this._pieces.keys());
-    const center = this.getClusterCenter(allPieces);
-    this.moveCluster(allPieces, new Vec3(-center.x, 20 - center.y, 0));
-    this._pieces.forEach((runtime) => runtime.piece.setInteractable(false));
+    this._pieces.forEach((runtime) => {
+      runtime.piece.setConnected(true);
+      runtime.piece.setInteractable(false);
+    });
     this.feedbackLabel!.string = `第 ${this.levelConfig.level} 关完成！`;
   };
-
-  /** 计算组合外接矩形的中心点，用于通关后居中展示完整图片。 */
-  private getClusterCenter(cluster: Set<number>): Vec3 {
-    let minX = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
-    cluster.forEach((id) => {
-      const position = this._pieces.get(id)!.piece.node.position;
-      minX = Math.min(minX, position.x);
-      maxX = Math.max(maxX, position.x);
-      minY = Math.min(minY, position.y);
-      maxY = Math.max(maxY, position.y);
-    });
-    return new Vec3((minX + maxX) / 2, (minY + maxY) / 2, 0);
-  }
 
   /** 按钮请求重新开始当前关卡。 */
   private onRestart = (): void => EventCenter.emit(GameEvent.PuzzleRestart);
@@ -1095,12 +1149,14 @@ export class UIGamePanel extends UIBase {
     EventCenter.off(GameEvent.PuzzleRestart, this.onRestartRequested, this);
   }
 
-  /** 销毁上一轮实例和运行时切片，并清空组合关系。 */
+  /** 销毁上一轮实例和运行时切片，并清空格子占用关系。 */
   private clearPieces(): void {
     this._pieces.forEach((runtime) => runtime.piece.node.destroy());
     this._pieces.clear();
-    this._clusters.clear();
-    this._pieceClusterIds.clear();
+    this._pieceIdsByCell.length = 0;
+    this._cellIndexByPieceId.clear();
+    this._connectedGroupByPieceId.clear();
+    this.clearDraggingState();
     this._pieceFrames.forEach((frame) => frame.destroy());
     this._pieceFrames = [];
     this.releaseSourcePreviewFrame();

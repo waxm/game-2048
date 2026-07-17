@@ -7,7 +7,7 @@
         "fix:level-imports": "node tools/generate-puzzle-level-configs.mjs --fix-import-settings",
         "validate:levels": "node tools/generate-puzzle-level-configs.mjs --check",
         "configure:scenes": "node tools/configure-scene-bindings.mjs",
-        "configure:prefabs": "node tools/configure-prefab-bindings.mjs",
+        "configure:prefabs": "node tools/configure-prefab-bindings.mjs && node tools/configure-puzzle-piece-prefab.mjs",
         "validate:cocos": "node tools/validate-cocos-assets.mjs",
         "verify": "npm run typecheck && npm run validate:levels && npm run validate:cocos"
     },

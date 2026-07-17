@@ -27,7 +27,7 @@ export interface PuzzlePieceResult {
 
 /** UI 发给控制器的拼图块放下请求。 */
 export interface PuzzlePieceDropRequest {
-  /** 本次吸附后同一组合内的全部拼图编号。 */
+  /** 当前最大正确连接分组的拼图编号；没有形成连接时为空数组。 */
   connectedPieceIds: number[];
 
   /** 是否由自动组合道具触发；道具每次只增加一点显示进度。 */

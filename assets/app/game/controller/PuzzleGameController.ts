@@ -69,10 +69,10 @@ export class PuzzleGameController {
       return;
     }
 
-    // 自动组合道具按使用次数增加一点；普通拖拽仍记录历史最大组合，避免分离组合重复累计。
+    // 自动组合道具按使用次数增加一点；普通交换使用当前真实连接数量，允许拆开后回退。
     this._state.placedCount = request.fromAutoMergeTool
       ? Math.min(this._state.totalCount, this._state.placedCount + 1)
-      : Math.max(this._state.placedCount, request.connectedPieceIds.length);
+      : request.connectedPieceIds.length;
 
     // 无论显示进度是多少，只要全部拼图已进入同一组合就应立即完成关卡。
     if (request.connectedPieceIds.length === this._state.totalCount) {
@@ -80,11 +80,13 @@ export class PuzzleGameController {
     }
     this._state.completed = this._state.placedCount === this._state.totalCount;
 
-    const result: PuzzlePieceResult = {
-      pieceId: request.connectedPieceIds[0],
-      correct: true,
-    };
-    EventCenter.emit(GameEvent.PuzzlePieceDropped, result);
+    if (request.connectedPieceIds.length > 0) {
+      const result: PuzzlePieceResult = {
+        pieceId: request.connectedPieceIds[0],
+        correct: true,
+      };
+      EventCenter.emit(GameEvent.PuzzlePieceDropped, result);
+    }
     EventCenter.emit(GameEvent.PuzzleStateChanged, this.getState());
 
     if (this._state.completed) {
@@ -146,11 +148,10 @@ export class PuzzleGameController {
     return { ...this._state };
   }
 
-  /** 校验组合编号无重复且全部属于当前规则网格关卡。 */
+  /** 校验连接编号无重复且全部属于当前规则网格关卡；空数组表示当前没有连接。 */
   private arePieceIdsValid(pieceIds: number[]): boolean {
     const uniqueIds = new Set(pieceIds);
     return (
-      pieceIds.length >= 2 &&
       uniqueIds.size === pieceIds.length &&
       pieceIds.every(
         (pieceId) =>
