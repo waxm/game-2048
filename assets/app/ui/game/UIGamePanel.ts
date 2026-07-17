@@ -22,6 +22,11 @@ import { GameEvent } from "../../game/GameEvent";
 import { PuzzleGrid } from "../../game/logic/PuzzleGrid";
 import { PuzzleImageSlicer } from "../../game/logic/PuzzleImageSlicer";
 import {
+  PuzzleMoveFailureReason,
+  PuzzleMovePlanner,
+} from "../../game/logic/PuzzleMovePlanner";
+import type { PuzzleMovePlan } from "../../game/logic/PuzzleMovePlanner";
+import {
   PuzzleGameState,
   PuzzlePieceDropRequest,
 } from "../../game/model/PuzzleGameState";
@@ -142,6 +147,9 @@ export class UIGamePanel extends UIBase {
   /** 本次拖拽开始时各拼图所在格子，用于验证目标区域和失败复位。 */
   private readonly _dragOriginCells = new Map<number, number>();
 
+  /** 当前唯一拖拽的触摸锚点；用于阻止多指同时修改棋盘占用。 */
+  private _activeDragAnchorPieceId: number | null = null;
+
   /** 是否已注册按钮和状态事件。 */
   private _eventsBound = false;
 
@@ -163,10 +171,10 @@ export class UIGamePanel extends UIBase {
   /** 当前关卡是否已经超时失败。 */
   private _failed = false;
 
-  /** 当前关卡正式拼图阶段剩余的秒数。 */
+  /** 当前限时关卡剩余的秒数；不限时关卡固定保留为 0。 */
   private _remainingTime = 0;
 
-  /** 是否正在消耗本关剩余时间。 */
+  /** 是否已进入允许操作的正式拼图阶段；不限时关卡同样会设为 true。 */
   private _timerRunning = false;
 
   /**
@@ -248,7 +256,12 @@ export class UIGamePanel extends UIBase {
 
   /** 正式游戏阶段逐帧扣减时间并平滑刷新进度条。 */
   protected update(deltaTime: number): void {
-    if (!this._timerRunning || this._completed || this._failed) {
+    if (
+      !this._timerRunning ||
+      this._completed ||
+      this._failed ||
+      this.levelConfig.timeLimitSeconds === null
+    ) {
       return;
     }
 
@@ -531,14 +544,14 @@ export class UIGamePanel extends UIBase {
   /** 恢复本关完整时间，但在原图观察阶段不开始扣减。 */
   private resetLevelTimer(): void {
     this._timerRunning = false;
-    this._remainingTime = this.levelConfig.timeLimitSeconds;
+    this._remainingTime = this.levelConfig.timeLimitSeconds ?? 0;
     this.refreshTimerDisplay();
   }
 
   /** 原图预览结束且拼图创建完成后开始关卡计时。 */
   private startLevelTimer(): void {
     this._timerRunning = true;
-    this._remainingTime = this.levelConfig.timeLimitSeconds;
+    this._remainingTime = this.levelConfig.timeLimitSeconds ?? 0;
     this.refreshTimerDisplay();
   }
 
@@ -550,6 +563,11 @@ export class UIGamePanel extends UIBase {
   /** 根据当前剩余比例刷新进度条长度和整秒文本。 */
   private refreshTimerDisplay(): void {
     const limit = this.levelConfig.timeLimitSeconds;
+    if (limit === null) {
+      this.timerBarFill!.node.setScale(1, 1, 1);
+      this.timerLabel!.string = "无限时间";
+      return;
+    }
     const ratio =
       limit > 0 ? Math.max(0, Math.min(1, this._remainingTime / limit)) : 0;
     this.timerBarFill!.node.setScale(ratio, 1, 1);
@@ -578,6 +596,7 @@ export class UIGamePanel extends UIBase {
       !this._completed &&
       !this._failed &&
       !this._toolPreviewRunning &&
+      this._activeDragAnchorPieceId === null &&
       this._pieces.size === totalPieces
     );
   }
@@ -585,6 +604,10 @@ export class UIGamePanel extends UIBase {
   /** 使用增加时间道具，为当前关卡补充固定秒数。 */
   private onAddTimeTool = (): void => {
     if (!this.canUseGameTool()) {
+      return;
+    }
+    if (this.levelConfig.timeLimitSeconds === null) {
+      this.feedbackLabel!.string = "本关时间无限，无需增加时间";
       return;
     }
     this._remainingTime += UIGamePanel.TIME_TOOL_BONUS_SECONDS;
@@ -710,7 +733,7 @@ export class UIGamePanel extends UIBase {
         }
 
         this.swapPieceToCell(movingId, desiredCellIndex);
-        return this.refreshConnectedState(false);
+        return this.refreshConnectedState(false, true);
       }
     }
     return null;
@@ -732,29 +755,53 @@ export class UIGamePanel extends UIBase {
     return new Vec3(x, y, 0);
   }
 
-  /** 开始拖动时记录整个连接组合的原始格子，并统一提升显示层级。 */
-  private onPieceDragStart = (pieceId: number): void => {
-    if (this._completed || this._failed) {
-      return;
+  /**
+   * 开始拖动时锁定唯一触摸，记录整个连接组合的原始格子并提升显示层级。
+   *
+   * 返回值交给 PuzzlePiece 判断本次触摸是否取得棋盘操作权，防止两根手指同时
+   * 建立两套拖拽快照并交叉覆盖格子占用。
+   */
+  private onPieceDragStart = (pieceId: number): boolean => {
+    if (
+      !this._timerRunning ||
+      this._completed ||
+      this._failed ||
+      this._toolPreviewRunning ||
+      this._activeDragAnchorPieceId !== null
+    ) {
+      return false;
     }
     const connectedGroup = this._connectedGroupByPieceId.get(pieceId);
     if (!connectedGroup) {
-      return;
+      return false;
     }
 
-    this._draggingPieceIds = new Set(connectedGroup);
-    this._dragOriginCells.clear();
-    this._draggingPieceIds.forEach((id) => {
+    const draggingPieceIds = new Set(connectedGroup);
+    const dragEntries: Array<{
+      id: number;
+      runtime: PieceRuntime;
+      cellIndex: number;
+    }> = [];
+    draggingPieceIds.forEach((id) => {
       const runtime = this._pieces.get(id);
       const cellIndex = this._cellIndexByPieceId.get(id);
       if (!runtime || cellIndex === undefined) {
         throw new Error(`拖拽组合缺少拼图 ${id} 的运行状态。`);
       }
+      dragEntries.push({ id, runtime, cellIndex });
+    });
+
+    // 先完成整组校验再写入活动状态，避免异常快照把后续触摸永久锁住。
+    this._activeDragAnchorPieceId = pieceId;
+    this._draggingPieceIds = draggingPieceIds;
+    this._dragOriginCells.clear();
+    dragEntries.forEach(({ id, runtime, cellIndex }) => {
       this._dragOriginCells.set(id, cellIndex);
       runtime.piece.node.setSiblingIndex(
         runtime.piece.node.parent!.children.length - 1,
       );
     });
+    return true;
   };
 
   /** 拖动过程中为组合内每块拼图应用相同位移，保持已经连接的边缘不被拉开。 */
@@ -762,7 +809,10 @@ export class UIGamePanel extends UIBase {
     if (this._completed || this._failed) {
       return;
     }
-    if (!this._draggingPieceIds?.has(pieceId)) {
+    if (
+      this._activeDragAnchorPieceId !== pieceId ||
+      !this._draggingPieceIds?.has(pieceId)
+    ) {
       return;
     }
     this._draggingPieceIds.forEach((id) => {
@@ -778,11 +828,21 @@ export class UIGamePanel extends UIBase {
   /**
    * 松手时验证整个组合是否能够平移到目标格。
    *
-   * 目标区域越界或会拆散其他已连接组合时，本次拖拽失败并完整复位；验证通过后
-   * 才一次性更新格子占用，避免部分拼图已经落格、其余拼图仍在原位。
+   * 取消触摸、目标越界、目标组覆盖不完整或置换后会改变连接组形状时，本轮都
+   * 完整复位；只有移动计划通过全部校验后才一次性提交格子占用。
    */
-  private onPieceDrop = (pieceId: number): void => {
+  private onPieceDrop = (pieceId: number, canceled: boolean): void => {
     if (this._completed || this._failed) {
+      return;
+    }
+    if (this._activeDragAnchorPieceId !== pieceId) {
+      return;
+    }
+
+    if (canceled) {
+      this.restoreDraggingGroup();
+      this.feedbackLabel!.string = "拖拽已取消，组合已返回原位";
+      this.clearDraggingState();
       return;
     }
 
@@ -793,20 +853,30 @@ export class UIGamePanel extends UIBase {
       sourceCellIndex === undefined ||
       !this._draggingPieceIds?.has(pieceId)
     ) {
+      this.restoreDraggingGroup();
+      this.clearDraggingState();
+      Logger.error(`拼图 ${pieceId} 松手时缺少完整拖拽快照。`);
+      this.feedbackLabel!.string = "拖拽状态异常，本次操作已复位";
       return;
     }
 
     const targetCellIndex =
       this.getNearestGridCellIndex(runtime.piece.node.position) ?? -1;
-    const placed = this.tryPlaceDraggingGroup(pieceId, targetCellIndex);
-    if (!placed) {
+    const plan = this.createDraggingMovePlan(pieceId, targetCellIndex);
+    if (!plan.valid) {
       this.restoreDraggingGroup();
-      this.feedbackLabel!.string = "当前位置无法容纳整个组合，已返回原位";
+      this.feedbackLabel!.string = this.getMoveFailureFeedback(plan.reason);
+      if (this.isInternalMoveFailure(plan.reason)) {
+        Logger.error(
+          `第 ${this.levelConfig.level} 关拖拽状态异常：${plan.reason}`,
+        );
+      }
       this.clearDraggingState();
       return;
     }
 
-    const connectedPieceIds = this.refreshConnectedState(true);
+    this.commitMovePlan(plan);
+    const connectedPieceIds = this.refreshConnectedState(true, true);
     this.feedbackLabel!.string =
       connectedPieceIds.length >= 2
         ? `已连接 ${connectedPieceIds.length} 块`
@@ -815,80 +885,116 @@ export class UIGamePanel extends UIBase {
   };
 
   /**
-   * 尝试把当前拖拽组合整体平移到目标格。
+   * 根据当前拖拽快照创建完整移动计划。
    *
-   * 新占用格中的未连接单块会被置换到组合腾出的原格；若目标格包含另一个已连接
-   * 组合，则拒绝本次放置，防止只替换其中一块导致已经完成的连接被拆散。
+   * 规划器会处理重叠平移形成的移动链，并要求目标中的每个已连接组合都被完整
+   * 覆盖、使用统一位移回填，从而支持“三格换两格加一单格”等完整组合置换。
    */
-  private tryPlaceDraggingGroup(
+  private createDraggingMovePlan(
     anchorPieceId: number,
     targetAnchorCellIndex: number,
-  ): boolean {
-    if (!this._draggingPieceIds || targetAnchorCellIndex < 0) {
-      return false;
-    }
-    const sourceAnchorCellIndex = this._dragOriginCells.get(anchorPieceId);
-    if (sourceAnchorCellIndex === undefined) {
-      return false;
-    }
-
-    const sourceAnchorCell = this.grid.getCell(sourceAnchorCellIndex);
-    const targetAnchorCell = this.grid.getCell(targetAnchorCellIndex);
-    const rowOffset = targetAnchorCell.row - sourceAnchorCell.row;
-    const columnOffset = targetAnchorCell.column - sourceAnchorCell.column;
-    const destinationCells = new Map<number, number>();
-
-    for (const id of this._draggingPieceIds) {
-      const sourceCellIndex = this._dragOriginCells.get(id)!;
-      const sourceCell = this.grid.getCell(sourceCellIndex);
-      const destinationCellIndex = this.getCellIndex(
-        sourceCell.row + rowOffset,
-        sourceCell.column + columnOffset,
-      );
-      if (destinationCellIndex === null) {
-        return false;
-      }
-      destinationCells.set(id, destinationCellIndex);
-    }
-
-    const sourceCellSet = new Set(this._dragOriginCells.values());
-    const destinationCellSet = new Set(destinationCells.values());
-    const destinationOnlyCells = [...destinationCellSet]
-      .filter((cellIndex) => !sourceCellSet.has(cellIndex))
-      .sort((first, second) => first - second);
-    const sourceOnlyCells = [...sourceCellSet]
-      .filter((cellIndex) => !destinationCellSet.has(cellIndex))
-      .sort((first, second) => first - second);
-
-    const displacedPieceIds: number[] = [];
-    for (const cellIndex of destinationOnlyCells) {
-      const occupantId = this._pieceIdsByCell[cellIndex];
-      const occupantGroup = this._connectedGroupByPieceId.get(occupantId);
-      if (!occupantGroup || occupantGroup.size > 1) {
-        return false;
-      }
-      displacedPieceIds.push(occupantId);
-    }
-    if (displacedPieceIds.length !== sourceOnlyCells.length) {
-      return false;
-    }
-
-    destinationCells.forEach((cellIndex, id) => {
-      this._pieceIdsByCell[cellIndex] = id;
-      this._cellIndexByPieceId.set(id, cellIndex);
-      this._pieces.get(id)!.piece.node.setPosition(
-        this.getGridPosition(cellIndex),
-      );
+  ): PuzzleMovePlan {
+    return PuzzleMovePlanner.createPlan({
+      rows: this.levelConfig.rows,
+      columns: this.levelConfig.columns,
+      pieceIdsByCell: this._pieceIdsByCell,
+      movingPieceIds: this._draggingPieceIds ?? new Set<number>(),
+      sourceCellByPieceId: this._dragOriginCells,
+      connectedGroupByPieceId: this._connectedGroupByPieceId,
+      anchorPieceId,
+      targetAnchorCellIndex,
     });
-    displacedPieceIds.forEach((id, index) => {
-      const cellIndex = sourceOnlyCells[index];
-      this._pieceIdsByCell[cellIndex] = id;
-      this._cellIndexByPieceId.set(id, cellIndex);
-      this._pieces.get(id)!.piece.node.setPosition(
-        this.getGridPosition(cellIndex),
-      );
-    });
-    return true;
+  }
+
+  /**
+   * 一次性提交规划器返回的完整置换，并把所有受影响节点吸附到格子中心。
+   *
+   * 提交前再次核对来源、目标和反向索引；任何状态不一致都会在写入前抛错，避免
+   * 快速触摸或后续代码改动造成半组已移动、半组仍在原位。
+   */
+  private commitMovePlan(plan: PuzzleMovePlan): void {
+    if (!plan.valid) {
+      throw new Error("不能提交无效的拼图移动计划。");
+    }
+
+    const sourceCells = new Set<number>();
+    const targetCells = new Set<number>();
+    const nextPieceIdsByCell = [...this._pieceIdsByCell];
+    for (const move of plan.moves) {
+      const runtime = this._pieces.get(move.pieceId);
+      if (
+        !runtime ||
+        this._pieceIdsByCell[move.sourceCellIndex] !== move.pieceId ||
+        this._cellIndexByPieceId.get(move.pieceId) !== move.sourceCellIndex ||
+        move.targetCellIndex < 0 ||
+        move.targetCellIndex >= this._pieceIdsByCell.length ||
+        sourceCells.has(move.sourceCellIndex) ||
+        targetCells.has(move.targetCellIndex)
+      ) {
+        throw new Error(
+          `拼图移动计划与当前占用不一致：piece=${move.pieceId}，` +
+            `source=${move.sourceCellIndex}，target=${move.targetCellIndex}`,
+        );
+      }
+      sourceCells.add(move.sourceCellIndex);
+      targetCells.add(move.targetCellIndex);
+    }
+    if (
+      sourceCells.size !== targetCells.size ||
+      [...sourceCells].some((cellIndex) => !targetCells.has(cellIndex))
+    ) {
+      throw new Error("拼图移动计划没有完整覆盖全部腾出格和目标格。");
+    }
+
+    for (const move of plan.moves) {
+      nextPieceIdsByCell[move.targetCellIndex] = move.pieceId;
+    }
+    if (
+      new Set(nextPieceIdsByCell).size !== nextPieceIdsByCell.length ||
+      nextPieceIdsByCell.some((pieceId) => !this._pieces.has(pieceId))
+    ) {
+      throw new Error("拼图移动计划提交后会产生重复格子或丢失拼图。");
+    }
+
+    this._pieceIdsByCell.splice(
+      0,
+      this._pieceIdsByCell.length,
+      ...nextPieceIdsByCell,
+    );
+    for (const move of plan.moves) {
+      this._cellIndexByPieceId.set(move.pieceId, move.targetCellIndex);
+      this._pieces
+        .get(move.pieceId)!
+        .piece.node.setPosition(this.getGridPosition(move.targetCellIndex));
+    }
+  }
+
+  /** 将移动规划失败原因转换为玩家可理解、可排错的放置反馈。 */
+  private getMoveFailureFeedback(reason: PuzzleMoveFailureReason): string {
+    switch (reason) {
+      case PuzzleMoveFailureReason.TargetOutOfBounds:
+      case PuzzleMoveFailureReason.InvalidAnchor:
+        return "组合超出棋盘边界，已返回原位";
+      case PuzzleMoveFailureReason.IncompleteTargetGroup:
+        return "目标连接组没有被完整覆盖，已返回原位";
+      case PuzzleMoveFailureReason.TargetGroupDeformed:
+        return "目标连接组无法保持原形，已返回原位";
+      default:
+        return "拼图占用状态异常，本次拖拽已复位";
+    }
+  }
+
+  /** 区分玩家正常放置失败与必须进入控制台排查的内部状态错误。 */
+  private isInternalMoveFailure(reason: PuzzleMoveFailureReason): boolean {
+    switch (reason) {
+      case PuzzleMoveFailureReason.InvalidAnchor:
+      case PuzzleMoveFailureReason.TargetOutOfBounds:
+      case PuzzleMoveFailureReason.IncompleteTargetGroup:
+      case PuzzleMoveFailureReason.TargetGroupDeformed:
+        return false;
+      default:
+        return true;
+    }
   }
 
   /** 放置失败时根据拖拽开始前记录的格子复位整个组合。 */
@@ -902,6 +1008,7 @@ export class UIGamePanel extends UIBase {
 
   /** 清空本轮拖拽的临时引用；允许在成功和失败路径重复调用。 */
   private clearDraggingState(): void {
+    this._activeDragAnchorPieceId = null;
     this._draggingPieceIds = null;
     this._dragOriginCells.clear();
   }
@@ -984,8 +1091,15 @@ export class UIGamePanel extends UIBase {
    * 交换可能建立也可能拆开旧连接，因此不能沿用只增不减的组合缓存。这里每次
    * 仅检查右侧和下侧邻格构建关系图，再用深度优先遍历得到真实连接分组。
    */
-  private refreshConnectedState(emitState: boolean): number[] {
+  private refreshConnectedState(
+    emitState: boolean,
+    playConnectedAnimation = false,
+  ): number[] {
     const adjacency = new Map<number, Set<number>>();
+    const previousGroupSizes = new Map<number, number>();
+    this._connectedGroupByPieceId.forEach((group, pieceId) => {
+      previousGroupSizes.set(pieceId, group.size);
+    });
     this._connectedGroupByPieceId.clear();
     this._pieces.forEach((_runtime, pieceId) => {
       adjacency.set(pieceId, new Set());
@@ -1042,9 +1156,19 @@ export class UIGamePanel extends UIBase {
       }
       const connectedGroup = new Set(component);
       const connected = component.length >= 2;
+      const connectionExpanded =
+        playConnectedAnimation &&
+        connected &&
+        component.some(
+          (id) => component.length > (previousGroupSizes.get(id) ?? 1),
+        );
       component.forEach((id) => {
         this._connectedGroupByPieceId.set(id, connectedGroup);
-        this._pieces.get(id)!.piece.setConnected(connected);
+        const piece = this._pieces.get(id)!.piece;
+        piece.setConnected(connected);
+        if (connectionExpanded) {
+          piece.playConnectedAnimation();
+        }
       });
     });
 

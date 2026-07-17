@@ -114,10 +114,19 @@ function createLevelConfig(level, definitions) {
 
 /** 校验关卡参数均为可执行的规则网格配置。 */
 function validateSettings(levelName, settings) {
-  for (const name of ["rows", "columns", "timeLimitSeconds"]) {
+  for (const name of ["rows", "columns"]) {
     if (!Number.isInteger(settings[name]) || settings[name] <= 0) {
       throw new Error(`${levelName}.${name} 必须是正整数。`);
     }
+  }
+  if (
+    settings.timeLimitSeconds !== null &&
+    (!Number.isInteger(settings.timeLimitSeconds) ||
+      settings.timeLimitSeconds <= 0)
+  ) {
+    throw new Error(
+      `${levelName}.timeLimitSeconds 必须是正整数或 null（不限时）。`,
+    );
   }
   for (const name of ["boardWidth", "boardHeight"]) {
     if (!Number.isFinite(settings[name]) || settings[name] <= 0) {
@@ -218,10 +227,12 @@ function createCatalogSource(levelNumbers, definitions) {
   const defaultSource = createSettingsSource(definitions.defaults, 2);
   const overrideEntries = Object.entries(definitions.levels)
     .sort(([first], [second]) => Number(first) - Number(second))
-    .map(
-      ([level, settings]) =>
-        `  [${level}, ${createSettingsSource(settings, 2, true)}],`,
-    )
+    .map(([level, settings]) => {
+      const settingsSource = createSettingsSource(settings, 6, true);
+      return settingsSource.includes("\n")
+        ? `  [\n    ${level},\n    ${settingsSource},\n  ],`
+        : `  [${level}, ${settingsSource}],`;
+    })
     .join("\n");
 
   return `// 本文件由 tools/generate-puzzle-level-configs.mjs 自动生成，请勿手工维护资源路径。
@@ -292,9 +303,21 @@ function createSettingsSource(settings, indent, compact = false) {
     .filter((name) => Object.hasOwn(settings, name))
     .map((name) => name);
   const lines = entries.map((name) => {
-    const value = Array.isArray(settings[name])
-      ? `[${settings[name].join(", ")}]`
-      : String(settings[name]);
+    const setting = settings[name];
+    let value = String(setting);
+    if (Array.isArray(setting)) {
+      value =
+        setting.length > 20
+          ? `[
+${chunk(setting, 16)
+  .map(
+    (items) =>
+      `${" ".repeat(indent + 2)}${items.join(", ")},`,
+  )
+  .join("\n")}
+${" ".repeat(indent)}]`
+          : `[${setting.join(", ")}]`;
+    }
     return `${" ".repeat(indent)}${name}: ${value},`;
   });
   if (compact && lines.length === 1) {
