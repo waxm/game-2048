@@ -285,6 +285,15 @@ export class UIGamePanel extends UIBase {
     super.onClose();
   }
 
+  /**
+   * 场景层恢复弹窗加载失败时，在仍然可见的游戏面板中展示明确提示。
+   *
+   * 本方法只更新已有 Prefab 绑定文本，不重开面板，也不改变当前关卡状态。
+   */
+  public showRecoverableError(message: string): void {
+    this.feedbackLabel!.string = message;
+  }
+
   /** 从 UIManager 打开参数中取得必填关卡配置，缺失时立即阻止错误界面运行。 */
   private readOpenParams(params: unknown): PuzzleLevelConfig {
     if (

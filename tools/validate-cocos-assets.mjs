@@ -77,6 +77,19 @@ function validateSerializedAsset(filePath) {
       homeButton: "cc.Button",
       homeButtonGraphics: "cc.Graphics",
     });
+  } else if (filePath.endsWith("UILoadErrorPanel.prefab")) {
+    validatePrefabBindings(objects, relativePath, {
+      overlayGraphics: "cc.Graphics",
+      panelGraphics: "cc.Graphics",
+      titleLabel: "cc.Label",
+      messageLabel: "cc.Label",
+      retryButton: "cc.Button",
+      retryButtonGraphics: "cc.Graphics",
+      retryButtonLabel: "cc.Label",
+      backButton: "cc.Button",
+      backButtonGraphics: "cc.Graphics",
+      backButtonLabel: "cc.Label",
+    });
   }
 }
 

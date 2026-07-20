@@ -1,4 +1,5 @@
 import { _decorator, Component } from "cc";
+import { Logger } from "../utils/Logger";
 
 const { ccclass } = _decorator;
 
@@ -31,6 +32,18 @@ export class SceneBase extends Component {
         `Scene 节点未绑定：${this.node.name}.${missingNames.join("、")}`,
       );
     }
+  }
+
+  /**
+   * 托管场景发起但不需要同步等待的异步任务。
+   *
+   * 业务函数仍应自行处理资源加载失败等预期结果；这里负责接住真正遗漏的异常，
+   * 保证按钮事件和 Cocos 生命周期不会产生 Unhandled Promise Rejection。
+   */
+  protected runAsyncTask(task: Promise<unknown>, description: string): void {
+    void task.catch((error) => {
+      Logger.error(`${this.sceneName} 场景异步任务失败：${description}`, error);
+    });
   }
 
   /**

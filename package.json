@@ -8,7 +8,8 @@
         "validate:levels": "node tools/generate-puzzle-level-configs.mjs --check",
         "verify:puzzle-drag": "node tools/verify-puzzle-drag.mjs",
         "configure:scenes": "node tools/configure-scene-bindings.mjs",
-        "configure:prefabs": "node tools/configure-prefab-bindings.mjs && node tools/configure-puzzle-piece-prefab.mjs",
+        "configure:prefabs": "node tools/configure-prefab-bindings.mjs && node tools/configure-puzzle-piece-prefab.mjs && node tools/create-load-error-prefab.mjs",
+        "generate:load-error-prefab": "node tools/create-load-error-prefab.mjs",
         "validate:cocos": "node tools/validate-cocos-assets.mjs",
         "verify": "npm run typecheck && npm run validate:levels && npm run verify:puzzle-drag && npm run validate:cocos"
     },

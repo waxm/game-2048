@@ -1,4 +1,5 @@
-import { _decorator, Component } from "cc";
+import { _decorator, Component, isValid } from "cc";
+import { Logger } from "../utils/Logger";
 
 const { ccclass } = _decorator;
 
@@ -14,6 +15,9 @@ export class UIBase extends Component {
 
     /** 打开 UI 时传入的参数，方便面板内部读取。 */
     private _openParams: unknown = null;
+
+    /** 是否正在执行关闭生命周期，防止回调重入后重复清理。 */
+    private _closing = false;
 
     /** 当前 UI 是否处于打开状态。 */
     public get isOpened(): boolean {
@@ -66,16 +70,27 @@ export class UIBase extends Component {
      */
     public close(): void {
         if (!this._isOpened) {
-            this.node.active = false;
+            if (isValid(this.node, true)) {
+                this.node.active = false;
+            }
             return;
         }
 
-        this.onHide();
-        this.onClose();
+        this.finishCloseLifecycle();
+        if (isValid(this.node, true)) {
+            this.node.active = false;
+        }
+    }
 
-        this._isOpened = false;
-        this._openParams = null;
-        this.node.active = false;
+    /**
+     * 节点即将被场景树销毁时提前完成关闭清理。
+     *
+     * Cocos 会先销毁子节点，再执行根组件的 onDestroy。UIManager 会在
+     * NODE_DESTROYED 事件刚触发、子节点仍有效时调用本方法，因此这里只执行
+     * 生命周期，不再修改已经进入销毁流程的节点 active 状态。
+     */
+    public disposeBeforeNodeDestroy(): void {
+        this.finishCloseLifecycle();
     }
 
     /**
@@ -148,8 +163,50 @@ export class UIBase extends Component {
      * 如果面板仍处于打开状态，补一次关闭清理，避免泄漏。
      */
     protected onDestroy(): void {
-        if (this._isOpened) {
+        try {
+            // 未交给 UIManager 管理的面板仍保留兜底清理；正常动态面板会提前完成。
+            this.disposeBeforeNodeDestroy();
+        } catch (error) {
+            Logger.error(`UI 销毁清理失败：${this.constructor.name}`, error);
+        }
+    }
+
+    /**
+     * 幂等执行 onHide 和 onClose，并保证任一回调失败后内部状态仍会复位。
+     *
+     * 两个回调独立执行是为了确保 onHide 报错时，onClose 中的事件和计时器
+     * 清理仍然有机会完成；最终把第一个错误交回 UIManager 统一处理。
+     */
+    private finishCloseLifecycle(): void {
+        if (!this._isOpened || this._closing) {
+            return;
+        }
+
+        this._closing = true;
+        let firstError: unknown;
+        let hasError = false;
+
+        try {
+            this.onHide();
+        } catch (error) {
+            firstError = error;
+            hasError = true;
+        }
+
+        try {
             this.onClose();
+        } catch (error) {
+            if (!hasError) {
+                firstError = error;
+                hasError = true;
+            }
+        }
+
+        this._isOpened = false;
+        this._openParams = null;
+        this._closing = false;
+        if (hasError) {
+            throw firstError;
         }
     }
 }

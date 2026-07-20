@@ -120,4 +120,9 @@ export class UIHomePanel extends UIBase {
         const request: GameStartRequest = { level: this._targetLevel };
         EventCenter.emit(GameEvent.GameStart, request);
     }
+
+    /** 场景切换期间锁定开始按钮，失败恢复后允许玩家再次操作。 */
+    public setStartInteractable(interactable: boolean): void {
+        this.startButton!.interactable = interactable;
+    }
 }

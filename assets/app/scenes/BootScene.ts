@@ -2,16 +2,16 @@ import { _decorator } from "cc";
 import { App } from "../core/app/App";
 import { SceneBase } from "../core/scene/SceneBase";
 import { SceneManager } from "../core/scene/SceneManager";
+import { UIManager } from "../core/ui/UIManager";
 import { Logger } from "../core/utils/Logger";
+import {
+    UILoadErrorPanel,
+    UILoadErrorPanelOpenParams,
+} from "../ui/common/UILoadErrorPanel";
 
 const { ccclass } = _decorator;
 
-/**
- * 启动场景。
- *
- * 项目启动后先进入这个场景，用它完成框架初始化。
- * 框架初始化完成后，再自动切换到 Lobby 场景。
- */
+/** 初始化框架并进入大厅的启动场景。 */
 @ccclass("BootScene")
 export class BootScene extends SceneBase {
     /** 当前场景名。 */
@@ -20,33 +20,97 @@ export class BootScene extends SceneBase {
     /** 启动完成后进入的场景名。 */
     private readonly _nextSceneName = "Lobby";
 
-    /**
-     * 场景进入时调用。
-     *
-     * SceneBase 会在 onLoad 中自动调用这里。
-     */
+    /** 是否正在加载大厅，防止失败弹窗连续提交重试。 */
+    private _sceneLoading = false;
+
+    /** 当前加载失败弹窗请求编号。 */
+    private _errorPanelRequestId = 0;
+
+    /** 初始化框架、注册启动恢复界面并进入大厅。 */
     protected onEnter(): void {
         super.onEnter();
-
         Logger.info("进入启动场景。");
-        this.initFramework();
-        this.enterNextScene();
-    }
-
-    /**
-     * 初始化框架。
-     *
-     * 第一版先只调用 App.init()，后续资源、配置、存档、音频等模块会继续接到这里。
-     */
-    private initFramework(): void {
         App.init();
+        this.prepareLoadErrorPanel();
+        this.runAsyncTask(this.enterNextScene(), "进入大厅场景");
     }
 
-    /**
-     * 进入下一个场景。
-     */
-    private enterNextScene(): void {
+    /** 离开启动场景时使旧弹窗请求失效并销毁恢复界面。 */
+    protected onExit(): void {
+        this._errorPanelRequestId += 1;
+        this._sceneLoading = false;
+        UIManager.close("UILoadErrorPanel", true);
+        super.onExit();
+    }
+
+    /** 等待 Lobby 场景实际加载完成，失败时保留 Boot 并提供重新尝试。 */
+    private async enterNextScene(): Promise<void> {
+        if (this._sceneLoading) {
+            return;
+        }
+        this._sceneLoading = true;
         Logger.info(`启动流程完成，准备进入场景：${this._nextSceneName}`);
-        SceneManager.load(this._nextSceneName);
+        const result = await SceneManager.load(this._nextSceneName);
+        if (result.status === "loaded") {
+            return;
+        }
+        if (!this.node.isValid) {
+            return;
+        }
+
+        this._sceneLoading = false;
+        Logger.error(
+            `启动场景切换失败，状态：${result.status}，原因：${result.reason ?? "unknown"}`,
+            result.error,
+        );
+        await this.openLoadErrorPanel({
+            title: "大厅加载失败",
+            message: "大厅场景暂时无法进入，请重新尝试。",
+            retryLabel: "重新加载",
+            onRetry: this.retryEnterNextScene,
+        });
+    }
+
+    /** 关闭失败弹窗后重新加载 Lobby 场景。 */
+    private retryEnterNextScene = (): void => {
+        this.closeLoadErrorPanel();
+        this.runAsyncTask(this.enterNextScene(), "重新进入大厅场景");
+    };
+
+    /** 打开启动失败弹窗；弹窗自身失败时仍保留完整控制台诊断。 */
+    private async openLoadErrorPanel(
+        params: UILoadErrorPanelOpenParams,
+    ): Promise<void> {
+        const requestId = ++this._errorPanelRequestId;
+        UIManager.close("UILoadErrorPanel", true);
+        const result = await UIManager.open<UILoadErrorPanel>(
+            "UILoadErrorPanel",
+            params,
+        );
+        if (!this.node.isValid || requestId !== this._errorPanelRequestId) {
+            return;
+        }
+        if (result.status === "failed") {
+            Logger.error(
+                `启动加载失败弹窗打开失败，阶段：${result.reason ?? "unknown"}`,
+                result.error,
+            );
+        }
+    }
+
+    /** 关闭加载失败弹窗并取消尚未结束的旧打开请求。 */
+    private closeLoadErrorPanel(): void {
+        this._errorPanelRequestId += 1;
+        UIManager.close("UILoadErrorPanel", true);
+    }
+
+    /** 让 Boot 的 Canvas 承载通用加载失败弹窗。 */
+    private prepareLoadErrorPanel(): void {
+        UIManager.setRoot(this.node);
+        UIManager.register({
+            name: "UILoadErrorPanel",
+            path: "prefabs/common/UILoadErrorPanel",
+            cache: false,
+        });
     }
 }
