@@ -21,7 +21,7 @@ const preparedPrefabMetas = new Map();
 const level001PieceWidth = 448 / 3;
 const level001PieceHeight = 448 / 3;
 
-/** 生成第 1 关需要的两个 Prefab。 */
+/** 生成拼图玩法使用的面板、拼图块和结算弹窗 Prefab。 */
 function main() {
   fs.mkdirSync(prefabDir, { recursive: true });
   fs.mkdirSync(popupPrefabDir, { recursive: true });
@@ -45,7 +45,7 @@ function main() {
   writePrefab("UIGamePanel", createPanelPrefab());
   writePrefab("UIResultPanel", createResultPanelPrefab(), popupPrefabDir);
   console.log(
-    "Generated PuzzlePiece.prefab, UIGamePanel.prefab and UIResultPanel.prefab",
+    "已生成 PuzzlePiece.prefab、UIGamePanel.prefab 和 UIResultPanel.prefab。",
   );
 }
 
@@ -203,6 +203,8 @@ function createPiecePrefab() {
     32,
     color(255, 255, 255),
   );
+  // 排错编号默认隐藏，实例化到 setData 之前也不能短暂闪出占位文本。
+  objects[numberNodeId]._active = false;
   const scriptId = addObject(objects, {
     __type__: pieceScriptType,
     _name: "",
@@ -271,6 +273,52 @@ function createPanelPrefab() {
     0,
     640,
     1136,
+  );
+  const puzzleContainerTransformId =
+    objects[puzzleContainerId]._components[0].__id__;
+  const restingGroupBorderNodeId = addNode(
+    objects,
+    "RestingGroupBorderLayer",
+    rootId,
+    0,
+    0,
+    640,
+    1136,
+  );
+  const restingGroupBorderGraphicsId = addGraphics(
+    objects,
+    restingGroupBorderNodeId,
+  );
+  const activeGroupRootId = addNode(
+    objects,
+    "ActiveGroupRoot",
+    rootId,
+    0,
+    0,
+    640,
+    1136,
+  );
+  const activePieceContainerId = addNode(
+    objects,
+    "ActivePieceContainer",
+    activeGroupRootId,
+    0,
+    0,
+    640,
+    1136,
+  );
+  const activeGroupBorderNodeId = addNode(
+    objects,
+    "ActiveGroupBorderLayer",
+    activeGroupRootId,
+    0,
+    0,
+    640,
+    1136,
+  );
+  const activeGroupBorderGraphicsId = addGraphics(
+    objects,
+    activeGroupBorderNodeId,
   );
   const timerBarBackgroundNodeId = addNode(
     objects,
@@ -398,6 +446,11 @@ function createPanelPrefab() {
     progressLabel: ref(progressLabelId),
     feedbackLabel: ref(feedbackLabelId),
     puzzleContainer: ref(puzzleContainerId),
+    puzzleContainerTransform: ref(puzzleContainerTransformId),
+    restingGroupBorderGraphics: ref(restingGroupBorderGraphicsId),
+    activeGroupRoot: ref(activeGroupRootId),
+    activePieceContainer: ref(activePieceContainerId),
+    activeGroupBorderGraphics: ref(activeGroupBorderGraphicsId),
     piecePrefab: {
       __uuid__: piecePrefabUuid,
       __expectedType__: "cc.Prefab",
@@ -751,6 +804,69 @@ function validatePrefab(name, objects) {
   }
   if (!objects.some((object) => object?.__type__ === expectedScriptType)) {
     throw new Error(`${name} 缺少业务脚本组件 ${expectedScriptType}。`);
+  }
+  validateRequiredBindings(name, objects, expectedScriptType);
+}
+
+/** 校验生成后的业务字段都指向预期组件或节点。 */
+function validateRequiredBindings(name, objects, scriptType) {
+  const requiredBindingsByPrefab = {
+    PuzzlePiece: {
+      pieceTransform: "cc.UITransform",
+      imageSprite: "cc.Sprite",
+      numberLabel: "cc.Label",
+    },
+    UIGamePanel: {
+      titleLabel: "cc.Label",
+      progressLabel: "cc.Label",
+      feedbackLabel: "cc.Label",
+      puzzleContainer: "cc.Node",
+      puzzleContainerTransform: "cc.UITransform",
+      restingGroupBorderGraphics: "cc.Graphics",
+      activeGroupRoot: "cc.Node",
+      activePieceContainer: "cc.Node",
+      activeGroupBorderGraphics: "cc.Graphics",
+      sourcePreviewNode: "cc.Node",
+      sourcePreviewOverlay: "cc.Graphics",
+      sourcePreviewSprite: "cc.Sprite",
+      sourcePreviewCountdownLabel: "cc.Label",
+      timerBarBackground: "cc.Graphics",
+      timerBarFill: "cc.Graphics",
+      timerLabel: "cc.Label",
+      restartButton: "cc.Button",
+      backButton: "cc.Button",
+      addTimeToolButton: "cc.Button",
+      viewSourceToolButton: "cc.Button",
+      autoMergeToolButton: "cc.Button",
+    },
+    UIResultPanel: {
+      overlayGraphics: "cc.Graphics",
+      panelGraphics: "cc.Graphics",
+      titleLabel: "cc.Label",
+      messageLabel: "cc.Label",
+      primaryButton: "cc.Button",
+      primaryButtonGraphics: "cc.Graphics",
+      primaryButtonLabel: "cc.Label",
+      homeButton: "cc.Button",
+      homeButtonGraphics: "cc.Graphics",
+    },
+  };
+  const requiredBindings = requiredBindingsByPrefab[name];
+  const script = objects.find((object) => object?.__type__ === scriptType);
+  for (const [field, expectedType] of Object.entries(requiredBindings)) {
+    const target = objects[script?.[field]?.__id__];
+    if (target?.__type__ !== expectedType) {
+      throw new Error(
+        `${name}.${field} 必须显式绑定到 ${expectedType}，实际为 ${target?.__type__ ?? "空"}。`,
+      );
+    }
+  }
+  if (
+    name === "UIGamePanel" &&
+    (script.piecePrefab?.__uuid__ !== piecePrefabUuid ||
+      script.piecePrefab?.__expectedType__ !== "cc.Prefab")
+  ) {
+    throw new Error("UIGamePanel.piecePrefab 没有绑定正式 PuzzlePiece Prefab。");
   }
 }
 

@@ -65,6 +65,49 @@ function validateSerializedAsset(filePath) {
       startButtonLabel: "cc.Label",
       tipLabel: "cc.Label",
     });
+  } else if (filePath.endsWith("PuzzlePiece.prefab")) {
+    validatePrefabBindings(objects, relativePath, {
+      pieceTransform: "cc.UITransform",
+      imageSprite: "cc.Sprite",
+      numberLabel: "cc.Label",
+    });
+  } else if (filePath.endsWith("UIGamePanel.prefab")) {
+    validatePrefabBindings(objects, relativePath, {
+      titleLabel: "cc.Label",
+      progressLabel: "cc.Label",
+      feedbackLabel: "cc.Label",
+      puzzleContainer: "cc.Node",
+      puzzleContainerTransform: "cc.UITransform",
+      restingGroupBorderGraphics: "cc.Graphics",
+      activeGroupRoot: "cc.Node",
+      activePieceContainer: "cc.Node",
+      activeGroupBorderGraphics: "cc.Graphics",
+      sourcePreviewNode: "cc.Node",
+      sourcePreviewOverlay: "cc.Graphics",
+      sourcePreviewSprite: "cc.Sprite",
+      sourcePreviewCountdownLabel: "cc.Label",
+      timerBarBackground: "cc.Graphics",
+      timerBarFill: "cc.Graphics",
+      timerLabel: "cc.Label",
+      restartButton: "cc.Button",
+      backButton: "cc.Button",
+      addTimeToolButton: "cc.Button",
+      viewSourceToolButton: "cc.Button",
+      autoMergeToolButton: "cc.Button",
+    });
+    validateGamePanelHierarchy(objects, relativePath);
+    const piecePrefabMeta = JSON.parse(
+      fs.readFileSync(
+        path.join(prefabRoot, "game/PuzzlePiece.prefab.meta"),
+        "utf8",
+      ),
+    );
+    validatePrefabAssetBinding(
+      objects,
+      relativePath,
+      "piecePrefab",
+      piecePrefabMeta.uuid,
+    );
   } else if (filePath.endsWith("UIResultPanel.prefab")) {
     validatePrefabBindings(objects, relativePath, {
       overlayGraphics: "cc.Graphics",
@@ -90,6 +133,36 @@ function validateSerializedAsset(filePath) {
       backButtonGraphics: "cc.Graphics",
       backButtonLabel: "cc.Label",
     });
+  }
+}
+
+/** 校验组合边框层和活动拼图容器位于确定的父节点下。 */
+function validateGamePanelHierarchy(objects, relativePath) {
+  const getUniqueNodeId = (name) => {
+    const ids = objects
+      .map((object, index) => ({ object, index }))
+      .filter(
+        ({ object }) => object.__type__ === "cc.Node" && object._name === name,
+      )
+      .map(({ index }) => index);
+    if (ids.length !== 1) {
+      throw new Error(`${relativePath} 必须有且只有一个 ${name} 节点。`);
+    }
+    return ids[0];
+  };
+
+  const rootId = getUniqueNodeId("UIGamePanel");
+  const restingBorderId = getUniqueNodeId("RestingGroupBorderLayer");
+  const activeRootId = getUniqueNodeId("ActiveGroupRoot");
+  const activePieceContainerId = getUniqueNodeId("ActivePieceContainer");
+  const activeBorderId = getUniqueNodeId("ActiveGroupBorderLayer");
+  if (
+    objects[restingBorderId]._parent?.__id__ !== rootId ||
+    objects[activeRootId]._parent?.__id__ !== rootId ||
+    objects[activePieceContainerId]._parent?.__id__ !== activeRootId ||
+    objects[activeBorderId]._parent?.__id__ !== activeRootId
+  ) {
+    throw new Error(`${relativePath} 的组合边框或活动组合节点层级不正确。`);
   }
 }
 
@@ -209,6 +282,28 @@ function validatePrefabBindings(objects, relativePath, requiredBindings) {
         `${relativePath} 的必填字段 ${field} 未绑定到 ${expectedType}。`,
       );
     }
+  }
+}
+
+/** 校验业务脚本显式引用了指定 UUID 的 Prefab 资源。 */
+function validatePrefabAssetBinding(
+  objects,
+  relativePath,
+  field,
+  expectedUuid,
+) {
+  const candidateScripts = objects.filter(
+    (object) => object?.node?.__id__ !== undefined && Object.hasOwn(object, field),
+  );
+  if (candidateScripts.length !== 1) {
+    throw new Error(`${relativePath} 无法确定包含 ${field} 的唯一业务脚本。`);
+  }
+  const binding = candidateScripts[0][field];
+  if (
+    binding?.__uuid__ !== expectedUuid ||
+    binding?.__expectedType__ !== "cc.Prefab"
+  ) {
+    throw new Error(`${relativePath} 的 ${field} 没有绑定预期 Prefab UUID。`);
   }
 }
 

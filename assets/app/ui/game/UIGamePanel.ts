@@ -9,6 +9,9 @@ import {
   Prefab,
   Sprite,
   SpriteFrame,
+  tween,
+  Tween,
+  UITransform,
   Vec3,
 } from "cc";
 import { EventCenter } from "../../core/event/EventCenter";
@@ -30,6 +33,12 @@ import {
   PuzzleGameState,
   PuzzlePieceDropRequest,
 } from "../../game/model/PuzzleGameState";
+import { PuzzleGroupManager } from "../../game/model/PuzzleGroup";
+import type {
+  PuzzleGroup,
+  PuzzleGroupConnection,
+} from "../../game/model/PuzzleGroup";
+import { PuzzleGroupBorderRenderer } from "./PuzzleGroupBorderRenderer";
 import { PuzzlePiece } from "./PuzzlePiece";
 
 const { ccclass, property } = _decorator;
@@ -61,6 +70,15 @@ export class UIGamePanel extends UIBase {
   /** 时间进度条的固定高度。 */
   private static readonly TIMER_BAR_HEIGHT = 24;
 
+  /** 棋盘中心相对面板中心的纵向偏移。 */
+  private static readonly BOARD_CENTER_Y = 40;
+
+  /** 组合成功动画的最大放大倍率。 */
+  private static readonly CONNECTED_GROUP_SCALE = 1.08;
+
+  /** 组合成功动画单程持续时间，单位为秒。 */
+  private static readonly CONNECTED_GROUP_ANIMATION_DURATION = 0.12;
+
   /** 关卡标题。 */
   @property({ type: Label })
   public titleLabel: Label | null = null;
@@ -76,6 +94,26 @@ export class UIGamePanel extends UIBase {
   /** 所有动态拼图块共用的坐标容器。 */
   @property({ type: Node })
   public puzzleContainer: Node | null = null;
+
+  /** 拼图容器的坐标转换组件，用于把稳定 UI 触摸坐标换算为棋盘坐标。 */
+  @property({ type: UITransform })
+  public puzzleContainerTransform: UITransform | null = null;
+
+  /** 所有静止组合共用的外轮廓绘制组件。 */
+  @property({ type: Graphics })
+  public restingGroupBorderGraphics: Graphics | null = null;
+
+  /** 拖拽和合并动画共用的活动组合根节点。 */
+  @property({ type: Node })
+  public activeGroupRoot: Node | null = null;
+
+  /** 活动组合内临时挂载拼图块的容器。 */
+  @property({ type: Node })
+  public activePieceContainer: Node | null = null;
+
+  /** 活动组合独立使用的外轮廓绘制组件。 */
+  @property({ type: Graphics })
+  public activeGroupBorderGraphics: Graphics | null = null;
 
   /** 单块拼图 Prefab。 */
   @property({ type: Prefab })
@@ -138,8 +176,11 @@ export class UIGamePanel extends UIBase {
   /** 拼图编号到当前显示格子编号的反向索引。 */
   private readonly _cellIndexByPieceId = new Map<number, number>();
 
-  /** 拼图编号到当前正确连接组合的映射；未连接块对应只包含自己的集合。 */
-  private readonly _connectedGroupByPieceId = new Map<number, Set<number>>();
+  /** 当前棋盘唯一的真实组合状态管理器。 */
+  private readonly _groupManager = new PuzzleGroupManager();
+
+  /** 使用 Prefab 显式绑定节点创建的组合边框渲染器。 */
+  private _groupBorderRenderer: PuzzleGroupBorderRenderer | null = null;
 
   /** 本次正在整体拖动的拼图编号集合。 */
   private _draggingPieceIds: Set<number> | null = null;
@@ -147,8 +188,17 @@ export class UIGamePanel extends UIBase {
   /** 本次拖拽开始时各拼图所在格子，用于验证目标区域和失败复位。 */
   private readonly _dragOriginCells = new Map<number, number>();
 
+  /** 上一次拖拽触摸在稳定棋盘坐标系中的位置。 */
+  private readonly _dragLastTouchPosition = new Vec3();
+
   /** 当前唯一拖拽的触摸锚点；用于阻止多指同时修改棋盘占用。 */
   private _activeDragAnchorPieceId: number | null = null;
+
+  /** 当前是否正在播放整组连接成功动画。 */
+  private _groupAnimationRunning = false;
+
+  /** 当前临时挂在活动根节点中播放动画的拼图编号。 */
+  private readonly _animatingPieceIds = new Set<number>();
 
   /** 是否已注册按钮和状态事件。 */
   private _eventsBound = false;
@@ -220,6 +270,11 @@ export class UIGamePanel extends UIBase {
       progressLabel: this.progressLabel,
       feedbackLabel: this.feedbackLabel,
       puzzleContainer: this.puzzleContainer,
+      puzzleContainerTransform: this.puzzleContainerTransform,
+      restingGroupBorderGraphics: this.restingGroupBorderGraphics,
+      activeGroupRoot: this.activeGroupRoot,
+      activePieceContainer: this.activePieceContainer,
+      activeGroupBorderGraphics: this.activeGroupBorderGraphics,
       piecePrefab: this.piecePrefab,
       sourcePreviewNode: this.sourcePreviewNode,
       sourcePreviewOverlay: this.sourcePreviewOverlay,
@@ -235,6 +290,11 @@ export class UIGamePanel extends UIBase {
       autoMergeToolButton: this.autoMergeToolButton,
     });
 
+    this._groupBorderRenderer = new PuzzleGroupBorderRenderer(
+      this.restingGroupBorderGraphics!,
+      this.activeGroupBorderGraphics!,
+    );
+    this.resetActiveGroupRoot();
     this.drawTimerBar();
     this.drawSourcePreviewOverlay();
     this.bindEvents();
@@ -318,6 +378,13 @@ export class UIGamePanel extends UIBase {
       this._pieceWidth,
       this._pieceHeight,
     );
+    this.groupBorderRenderer.configure({
+      rows: levelConfig.rows,
+      columns: levelConfig.columns,
+      pieceWidth: this._pieceWidth,
+      pieceHeight: this._pieceHeight,
+      boardCenterY: UIGamePanel.BOARD_CENTER_Y,
+    });
     this.resetLevelTimer();
   }
 
@@ -335,6 +402,14 @@ export class UIGamePanel extends UIBase {
       throw new Error("UIGamePanel 当前没有有效的拼图网格。");
     }
     return this._grid;
+  }
+
+  /** 返回已在 onLoad 创建的组合边框渲染器。 */
+  private get groupBorderRenderer(): PuzzleGroupBorderRenderer {
+    if (!this._groupBorderRenderer) {
+      throw new Error("UIGamePanel 组合边框渲染器尚未初始化。");
+    }
+    return this._groupBorderRenderer;
   }
 
   /** 加载当前关卡整图，运行时裁成网格块并按打乱顺序放入规则网格。 */
@@ -590,6 +665,9 @@ export class UIGamePanel extends UIBase {
     }
     this._timerRunning = false;
     this._failed = true;
+    if (this._groupAnimationRunning) {
+      this.finishConnectedGroupAnimation(true, true);
+    }
     this.restoreDraggingGroup();
     this.clearDraggingState();
     this._pieces.forEach((runtime) => runtime.piece.setInteractable(false));
@@ -605,6 +683,7 @@ export class UIGamePanel extends UIBase {
       !this._completed &&
       !this._failed &&
       !this._toolPreviewRunning &&
+      !this._groupAnimationRunning &&
       this._activeDragAnchorPieceId === null &&
       this._pieces.size === totalPieces
     );
@@ -702,7 +781,7 @@ export class UIGamePanel extends UIBase {
         if (movingCellIndex === undefined || targetCellIndex === undefined) {
           continue;
         }
-        if ((this._connectedGroupByPieceId.get(movingId)?.size ?? 0) > 1) {
+        if ((this._groupManager.getGroupByPieceId(movingId)?.size ?? 0) > 1) {
           continue;
         }
         if (
@@ -736,7 +815,8 @@ export class UIGamePanel extends UIBase {
         }
         const displacedPieceId = this._pieceIdsByCell[desiredCellIndex];
         if (
-          (this._connectedGroupByPieceId.get(displacedPieceId)?.size ?? 0) > 1
+          (this._groupManager.getGroupByPieceId(displacedPieceId)?.size ?? 0) >
+          1
         ) {
           continue;
         }
@@ -751,41 +831,45 @@ export class UIGamePanel extends UIBase {
   /**
    * 根据格子序号生成无间隙的规则网格中心坐标。
    *
-   * 未连接底框虽然会内缩，但根节点和格子坐标不留空隙；连接后完整切片会自然
-   * 覆盖整个格子并与上下左右的正确切片严丝合缝。
+   * 每张切片始终铺满自己的格子，组合内部没有人为间距；外轮廓由共享 Graphics
+   * 覆盖在切片上方，因此合并后只消除公共边，不需要改变图片尺寸。
    */
   private getGridPosition(cellIndex: number): Vec3 {
     const cell = this.grid.getCell(cellIndex);
     const x =
       (cell.column - (this.levelConfig.columns - 1) / 2) * this._pieceWidth;
     const y =
-      40 +
+      UIGamePanel.BOARD_CENTER_Y +
       ((this.levelConfig.rows - 1) / 2 - cell.row) * this._pieceHeight;
     return new Vec3(x, y, 0);
   }
 
   /**
-   * 开始拖动时锁定唯一触摸，记录整个连接组合的原始格子并提升显示层级。
+   * 开始拖动时锁定唯一触摸，并把真实组合临时挂到活动根节点。
    *
-   * 返回值交给 PuzzlePiece 判断本次触摸是否取得棋盘操作权，防止两根手指同时
-   * 建立两套拖拽快照并交叉覆盖格子占用。
+   * 所有成员和格子先完整校验，再统一换父节点。之后拖动每帧只修改活动根节点的
+   * Transform；单块和 10×10 大组合走同一条路径，不会随组合大小增加每帧写操作。
    */
-  private onPieceDragStart = (pieceId: number): boolean => {
+  private onPieceDragStart = (
+    pieceId: number,
+    touchStartPosition: Readonly<Vec3>,
+  ): boolean => {
     if (
       !this._timerRunning ||
       this._completed ||
       this._failed ||
       this._toolPreviewRunning ||
+      this._groupAnimationRunning ||
       this._activeDragAnchorPieceId !== null
     ) {
       return false;
     }
-    const connectedGroup = this._connectedGroupByPieceId.get(pieceId);
-    if (!connectedGroup) {
+    const group = this._groupManager.getGroupByPieceId(pieceId);
+    if (!group) {
       return false;
     }
 
-    const draggingPieceIds = new Set(connectedGroup);
+    const draggingPieceIds = new Set(group.pieceIds);
     const dragEntries: Array<{
       id: number;
       runtime: PieceRuntime;
@@ -799,22 +883,39 @@ export class UIGamePanel extends UIBase {
       }
       dragEntries.push({ id, runtime, cellIndex });
     });
+    if (this.activePieceContainer!.children.length !== 0) {
+      throw new Error("活动组合容器在拖拽开始前仍有未清理节点。");
+    }
 
-    // 先完成整组校验再写入活动状态，避免异常快照把后续触摸永久锁住。
+    // 先完成整组校验再写入活动状态，异常快照不会把后续触摸永久锁住。
     this._activeDragAnchorPieceId = pieceId;
     this._draggingPieceIds = draggingPieceIds;
     this._dragOriginCells.clear();
+    this.resetActiveGroupRoot();
+    this._dragLastTouchPosition.set(
+      this.convertUiPositionToPuzzle(touchStartPosition),
+    );
     dragEntries.forEach(({ id, runtime, cellIndex }) => {
       this._dragOriginCells.set(id, cellIndex);
-      runtime.piece.node.setSiblingIndex(
-        runtime.piece.node.parent!.children.length - 1,
-      );
+      runtime.piece.node.setParent(this.activePieceContainer!, true);
     });
+    this.groupBorderRenderer.renderRestingGroups(
+      this._groupManager.groups,
+      this._cellIndexByPieceId,
+      group.id,
+    );
+    this.groupBorderRenderer.renderActiveGroup(
+      group,
+      this._cellIndexByPieceId,
+    );
     return true;
   };
 
-  /** 拖动过程中为组合内每块拼图应用相同位移，保持已经连接的边缘不被拉开。 */
-  private onPieceDragMove = (pieceId: number, delta: Vec3): void => {
+  /** 根据稳定 UI 触摸坐标只移动活动组合根节点，保持组合形状和边框完全同步。 */
+  private onPieceDragMove = (
+    pieceId: number,
+    currentPosition: Readonly<Vec3>,
+  ): void => {
     if (this._completed || this._failed) {
       return;
     }
@@ -824,14 +925,16 @@ export class UIGamePanel extends UIBase {
     ) {
       return;
     }
-    this._draggingPieceIds.forEach((id) => {
-      const node = this._pieces.get(id)!.piece.node;
-      node.setPosition(
-        node.position.x + delta.x,
-        node.position.y + delta.y,
-        0,
-      );
-    });
+    const localPosition = this.convertUiPositionToPuzzle(currentPosition);
+    const deltaX = localPosition.x - this._dragLastTouchPosition.x;
+    const deltaY = localPosition.y - this._dragLastTouchPosition.y;
+    this._dragLastTouchPosition.set(localPosition);
+    const activePosition = this.activeGroupRoot!.position;
+    this.activeGroupRoot!.setPosition(
+      activePosition.x + deltaX,
+      activePosition.y + deltaY,
+      0,
+    );
   };
 
   /**
@@ -855,10 +958,8 @@ export class UIGamePanel extends UIBase {
       return;
     }
 
-    const runtime = this._pieces.get(pieceId);
     const sourceCellIndex = this._dragOriginCells.get(pieceId);
     if (
-      !runtime ||
       sourceCellIndex === undefined ||
       !this._draggingPieceIds?.has(pieceId)
     ) {
@@ -869,8 +970,10 @@ export class UIGamePanel extends UIBase {
       return;
     }
 
+    const draggedAnchorPosition = this.getGridPosition(sourceCellIndex);
+    draggedAnchorPosition.add(this.activeGroupRoot!.position);
     const targetCellIndex =
-      this.getNearestGridCellIndex(runtime.piece.node.position) ?? -1;
+      this.getNearestGridCellIndex(draggedAnchorPosition) ?? -1;
     const plan = this.createDraggingMovePlan(pieceId, targetCellIndex);
     if (!plan.valid) {
       this.restoreDraggingGroup();
@@ -884,13 +987,17 @@ export class UIGamePanel extends UIBase {
       return;
     }
 
+    this.releaseDraggingPiecesToBoard();
     this.commitMovePlan(plan);
-    const connectedPieceIds = this.refreshConnectedState(true, true);
-    this.feedbackLabel!.string =
-      connectedPieceIds.length >= 2
-        ? `已连接 ${connectedPieceIds.length} 块`
-        : "组合已放入目标格，继续寻找正确相邻位置";
     this.clearDraggingState();
+    const connectedPieceIds = this.refreshConnectedState(true, true);
+    // 完成事件会同步写入最终提示，不能再被本次普通落点反馈覆盖。
+    if (!this._completed) {
+      this.feedbackLabel!.string =
+        connectedPieceIds.length >= 2
+          ? `已连接 ${connectedPieceIds.length} 块`
+          : "组合已放入目标格，继续寻找正确相邻位置";
+    }
   };
 
   /**
@@ -909,7 +1016,7 @@ export class UIGamePanel extends UIBase {
       pieceIdsByCell: this._pieceIdsByCell,
       movingPieceIds: this._draggingPieceIds ?? new Set<number>(),
       sourceCellByPieceId: this._dragOriginCells,
-      connectedGroupByPieceId: this._connectedGroupByPieceId,
+      groupByPieceId: this._groupManager.groupByPieceId,
       anchorPieceId,
       targetAnchorCellIndex,
     });
@@ -1008,11 +1115,19 @@ export class UIGamePanel extends UIBase {
 
   /** 放置失败时根据拖拽开始前记录的格子复位整个组合。 */
   private restoreDraggingGroup(): void {
+    if (!this._draggingPieceIds) {
+      return;
+    }
+    this.releaseDraggingPiecesToBoard();
     this._dragOriginCells.forEach((cellIndex, id) => {
       this._pieces.get(id)?.piece.node.setPosition(
         this.getGridPosition(cellIndex),
       );
     });
+    this.groupBorderRenderer.renderRestingGroups(
+      this._groupManager.groups,
+      this._cellIndexByPieceId,
+    );
   }
 
   /** 清空本轮拖拽的临时引用；允许在成功和失败路径重复调用。 */
@@ -1020,6 +1135,159 @@ export class UIGamePanel extends UIBase {
     this._activeDragAnchorPieceId = null;
     this._draggingPieceIds = null;
     this._dragOriginCells.clear();
+    this._dragLastTouchPosition.set(0, 0, 0);
+  }
+
+  /**
+   * 把活动组合成员放回静止拼图容器，并复位活动根节点。
+   *
+   * 先使用 keepWorldTransform 换父节点，再把根节点归零，防止提交前出现一帧额外
+   * 位移。最终格子吸附由成功提交或失败复位各自负责。
+   */
+  private releaseDraggingPiecesToBoard(): void {
+    this._draggingPieceIds?.forEach((pieceId) => {
+      const node = this._pieces.get(pieceId)?.piece.node;
+      if (node?.isValid) {
+        node.setParent(this.puzzleContainer!, true);
+      }
+    });
+    this.resetActiveGroupRoot();
+    this.groupBorderRenderer.clearActiveGroup();
+  }
+
+  /** 把 UI 触摸坐标转换到不会随活动组合移动的棋盘坐标系。 */
+  private convertUiPositionToPuzzle(position: Readonly<Vec3>): Vec3 {
+    return this.puzzleContainerTransform!.convertToNodeSpaceAR(
+      new Vec3(position.x, position.y, 0),
+    );
+  }
+
+  /**
+   * 使用活动组合根节点播放一次整体放大回弹。
+   *
+   * 动画期间图片和外轮廓属于同一个根节点，因此不会出现单块各自放大造成的裂缝；
+   * 输入暂时锁定，动画结束后再把成员归还静止容器并恢复共享边框层。
+   */
+  private playConnectedGroupAnimation(group: PuzzleGroup): void {
+    if (group.size < 2) {
+      return;
+    }
+    if (this._groupAnimationRunning) {
+      this.finishConnectedGroupAnimation(true, true);
+    }
+    if (this.activePieceContainer!.children.length !== 0) {
+      throw new Error("活动组合容器在连接动画开始前仍有未清理节点。");
+    }
+
+    const center = this.getGroupCenter(group);
+    this._groupAnimationRunning = true;
+    this._animatingPieceIds.clear();
+    this.activeGroupRoot!.setPosition(center);
+    this.activeGroupRoot!.setScale(1, 1, 1);
+    group.pieceIds.forEach((pieceId) => {
+      const runtime = this._pieces.get(pieceId);
+      if (!runtime) {
+        throw new Error(`连接动画缺少拼图 ${pieceId} 的运行实例。`);
+      }
+      this._animatingPieceIds.add(pieceId);
+      runtime.piece.node.setParent(this.activePieceContainer!, true);
+    });
+
+    this.groupBorderRenderer.renderRestingGroups(
+      this._groupManager.groups,
+      this._cellIndexByPieceId,
+      group.id,
+    );
+    this.groupBorderRenderer.renderActiveGroup(
+      group,
+      this._cellIndexByPieceId,
+      { x: -center.x, y: -center.y },
+    );
+
+    tween(this.activeGroupRoot!)
+      .to(
+        UIGamePanel.CONNECTED_GROUP_ANIMATION_DURATION,
+        {
+          scale: new Vec3(
+            UIGamePanel.CONNECTED_GROUP_SCALE,
+            UIGamePanel.CONNECTED_GROUP_SCALE,
+            1,
+          ),
+        },
+        { easing: "quadOut" },
+      )
+      .to(
+        UIGamePanel.CONNECTED_GROUP_ANIMATION_DURATION,
+        { scale: new Vec3(1, 1, 1) },
+        { easing: "quadIn" },
+      )
+      .call(() => this.finishConnectedGroupAnimation(false, true))
+      .start();
+  }
+
+  /**
+   * 结束组合动画并把所有成员恢复到正式棋盘容器。
+   *
+   * 方法允许被 Tween 回调、超时、重玩和销毁重复调用。中途停止时先恢复标准缩放，
+   * 再按逻辑格子重新吸附，避免保留动画进行到一半的世界坐标。
+   */
+  private finishConnectedGroupAnimation(
+    stopTween: boolean,
+    renderBorders: boolean,
+  ): void {
+    if (stopTween) {
+      Tween.stopAllByTarget(this.activeGroupRoot!);
+    }
+    this.activeGroupRoot!.setScale(1, 1, 1);
+    this._animatingPieceIds.forEach((pieceId) => {
+      const runtime = this._pieces.get(pieceId);
+      const cellIndex = this._cellIndexByPieceId.get(pieceId);
+      if (!runtime?.piece.node.isValid || cellIndex === undefined) {
+        return;
+      }
+      runtime.piece.node.setParent(this.puzzleContainer!, true);
+      runtime.piece.node.setPosition(this.getGridPosition(cellIndex));
+    });
+    this._animatingPieceIds.clear();
+    this._groupAnimationRunning = false;
+    this.resetActiveGroupRoot();
+    this.groupBorderRenderer.clearActiveGroup();
+    if (renderBorders && this._levelConfig && this._grid) {
+      this.groupBorderRenderer.renderRestingGroups(
+        this._groupManager.groups,
+        this._cellIndexByPieceId,
+      );
+    }
+  }
+
+  /** 计算组合当前外接矩形中心，作为整体缩放动画的正确轴心。 */
+  private getGroupCenter(group: PuzzleGroup): Vec3 {
+    let minimumX = Number.POSITIVE_INFINITY;
+    let maximumX = Number.NEGATIVE_INFINITY;
+    let minimumY = Number.POSITIVE_INFINITY;
+    let maximumY = Number.NEGATIVE_INFINITY;
+    group.pieceIds.forEach((pieceId) => {
+      const cellIndex = this._cellIndexByPieceId.get(pieceId);
+      if (cellIndex === undefined) {
+        throw new Error(`组合 ${group.id} 缺少拼图 ${pieceId} 的格子位置。`);
+      }
+      const position = this.getGridPosition(cellIndex);
+      minimumX = Math.min(minimumX, position.x);
+      maximumX = Math.max(maximumX, position.x);
+      minimumY = Math.min(minimumY, position.y);
+      maximumY = Math.max(maximumY, position.y);
+    });
+    return new Vec3(
+      (minimumX + maximumX) / 2,
+      (minimumY + maximumY) / 2,
+      0,
+    );
+  }
+
+  /** 复位活动组合根节点的位置和缩放；不改变其子节点归属。 */
+  private resetActiveGroupRoot(): void {
+    this.activeGroupRoot!.setPosition(0, 0, 0);
+    this.activeGroupRoot!.setScale(1, 1, 1);
   }
 
   /**
@@ -1056,7 +1324,7 @@ export class UIGamePanel extends UIBase {
         (this.levelConfig.columns - 1) / 2,
     );
     const row = Math.round(
-      (40 - position.y) / this._pieceHeight +
+      (UIGamePanel.BOARD_CENTER_Y - position.y) / this._pieceHeight +
         (this.levelConfig.rows - 1) / 2,
     );
     return this.getCellIndex(row, column);
@@ -1095,24 +1363,16 @@ export class UIGamePanel extends UIBase {
   }
 
   /**
-   * 重算当前棋盘上的正确连接分组，并同步每块拼图的背景与裁剪状态。
+   * 重算当前棋盘上的正确连接组合，并同步组合外轮廓。
    *
-   * 交换可能建立也可能拆开旧连接，因此不能沿用只增不减的组合缓存。这里每次
-   * 仅检查右侧和下侧邻格构建关系图，再用深度优先遍历得到真实连接分组。
+   * 界面层只负责收集右侧和下侧的正确连接边；真实组合的遍历、对象复用、反向
+   * 索引和原子替换由 PuzzleGroupManager 完成，避免进度、拖拽与边框各存一套状态。
    */
   private refreshConnectedState(
     emitState: boolean,
     playConnectedAnimation = false,
   ): number[] {
-    const adjacency = new Map<number, Set<number>>();
-    const previousGroupSizes = new Map<number, number>();
-    this._connectedGroupByPieceId.forEach((group, pieceId) => {
-      previousGroupSizes.set(pieceId, group.size);
-    });
-    this._connectedGroupByPieceId.clear();
-    this._pieces.forEach((_runtime, pieceId) => {
-      adjacency.set(pieceId, new Set());
-    });
+    const connections: PuzzleGroupConnection[] = [];
 
     this._pieceIdsByCell.forEach((pieceId, cellIndex) => {
       const cell = this.grid.getCell(cellIndex);
@@ -1133,61 +1393,37 @@ export class UIGamePanel extends UIBase {
             neighborIndex,
           )
         ) {
-          adjacency.get(pieceId)!.add(neighborPieceId);
-          adjacency.get(neighborPieceId)!.add(pieceId);
+          connections.push({
+            firstPieceId: pieceId,
+            secondPieceId: neighborPieceId,
+          });
         }
       });
     });
 
-    const visited = new Set<number>();
-    let largestConnectedPieceIds: number[] = [];
-    adjacency.forEach((_neighbors, pieceId) => {
-      if (visited.has(pieceId)) {
-        return;
-      }
-      const component: number[] = [];
-      const pending = [pieceId];
-      while (pending.length > 0) {
-        const currentId = pending.pop()!;
-        if (visited.has(currentId)) {
-          continue;
-        }
-        visited.add(currentId);
-        component.push(currentId);
-        adjacency.get(currentId)!.forEach((neighborId) => {
-          if (!visited.has(neighborId)) {
-            pending.push(neighborId);
-          }
-        });
-      }
-      if (component.length > largestConnectedPieceIds.length) {
-        largestConnectedPieceIds = component;
-      }
-      const connectedGroup = new Set(component);
-      const connected = component.length >= 2;
-      const connectionExpanded =
-        playConnectedAnimation &&
-        connected &&
-        component.some(
-          (id) => component.length > (previousGroupSizes.get(id) ?? 1),
-        );
-      component.forEach((id) => {
-        this._connectedGroupByPieceId.set(id, connectedGroup);
-        const piece = this._pieces.get(id)!.piece;
-        piece.setConnected(connected);
-        if (connectionExpanded) {
-          piece.playConnectedAnimation();
-        }
-      });
-    });
+    const rebuildResult = this._groupManager.rebuild(
+      this._pieces.keys(),
+      connections,
+    );
+    this.groupBorderRenderer.renderRestingGroups(
+      rebuildResult.groups,
+      this._cellIndexByPieceId,
+    );
 
-    const reportedPieceIds =
-      largestConnectedPieceIds.length >= 2 ? largestConnectedPieceIds : [];
+    const reportedPieceIds = rebuildResult.largestConnectedGroup
+      ? [...rebuildResult.largestConnectedGroup.pieceIds]
+      : [];
     if (emitState) {
       const request: PuzzlePieceDropRequest = {
         connectedPieceIds: reportedPieceIds,
       };
       EventCenter.emit(GameEvent.PuzzlePieceDropRequest, request);
+    }
+    if (playConnectedAnimation && rebuildResult.expandedGroups.length > 0) {
+      const animationGroup = [...rebuildResult.expandedGroups].sort(
+        (first, second) => second.size - first.size || first.id - second.id,
+      )[0];
+      this.playConnectedGroupAnimation(animationGroup);
     }
     return reportedPieceIds;
   }
@@ -1209,7 +1445,6 @@ export class UIGamePanel extends UIBase {
   private onCompleted = (): void => {
     this.stopLevelTimer();
     this._pieces.forEach((runtime) => {
-      runtime.piece.setConnected(true);
       runtime.piece.setInteractable(false);
     });
     this.feedbackLabel!.string = `第 ${this.levelConfig.level} 关完成！`;
@@ -1284,11 +1519,15 @@ export class UIGamePanel extends UIBase {
 
   /** 销毁上一轮实例和运行时切片，并清空格子占用关系。 */
   private clearPieces(): void {
+    this.finishConnectedGroupAnimation(true, false);
+    Tween.stopAllByTarget(this.activeGroupRoot!);
     this._pieces.forEach((runtime) => runtime.piece.node.destroy());
     this._pieces.clear();
     this._pieceIdsByCell.length = 0;
     this._cellIndexByPieceId.clear();
-    this._connectedGroupByPieceId.clear();
+    this._groupManager.clear();
+    this.groupBorderRenderer.clear();
+    this.resetActiveGroupRoot();
     this.clearDraggingState();
     this._pieceFrames.forEach((frame) => frame.destroy());
     this._pieceFrames = [];

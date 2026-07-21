@@ -58,6 +58,15 @@ export interface PuzzleMovePlan {
   readonly moves: readonly PuzzleMoveStep[];
 }
 
+/** 移动规划器读取的真实组合只读视图。 */
+export interface PuzzleMoveGroup {
+  /** 当前组合的稳定编号。 */
+  readonly id: number;
+
+  /** 当前组合包含的全部拼图编号。 */
+  readonly pieceIds: ReadonlySet<number>;
+}
+
 /** 生成移动计划所需的当前棋盘快照。 */
 export interface PuzzleMovePlanRequest {
   /** 当前棋盘行数。 */
@@ -75,11 +84,8 @@ export interface PuzzleMovePlanRequest {
   /** 拖拽开始时，移动组内每块拼图所在的格子。 */
   readonly sourceCellByPieceId: ReadonlyMap<number, number>;
 
-  /** 当前每块拼图所属的完整连接组。 */
-  readonly connectedGroupByPieceId: ReadonlyMap<
-    number,
-    ReadonlySet<number>
-  >;
+  /** 当前每块拼图所属的真实组合对象。 */
+  readonly groupByPieceId: ReadonlyMap<number, PuzzleMoveGroup>;
 
   /** 用户实际按住的拼图编号，用它计算整组位移。 */
   readonly anchorPieceId: number;
@@ -270,12 +276,10 @@ export class PuzzleMovePlanner {
       return PuzzleMoveFailureReason.InvalidMovingGroup;
     }
 
-    const anchorGroup = request.connectedGroupByPieceId.get(
-      request.anchorPieceId,
-    );
+    const anchorGroup = request.groupByPieceId.get(request.anchorPieceId);
     if (
       !anchorGroup ||
-      !this.areSameMembers(anchorGroup, request.movingPieceIds)
+      !this.areSameMembers(anchorGroup.pieceIds, request.movingPieceIds)
     ) {
       return PuzzleMoveFailureReason.InvalidMovingGroup;
     }
@@ -283,13 +287,13 @@ export class PuzzleMovePlanner {
     const sourceCells = new Set<number>();
     for (const pieceId of request.movingPieceIds) {
       const sourceCellIndex = request.sourceCellByPieceId.get(pieceId);
-      const pieceGroup = request.connectedGroupByPieceId.get(pieceId);
+      const pieceGroup = request.groupByPieceId.get(pieceId);
       if (
         sourceCellIndex === undefined ||
         request.pieceIdsByCell[sourceCellIndex] !== pieceId ||
         sourceCells.has(sourceCellIndex) ||
         !pieceGroup ||
-        !this.areSameMembers(pieceGroup, request.movingPieceIds)
+        !this.areSameMembers(pieceGroup.pieceIds, request.movingPieceIds)
       ) {
         return PuzzleMoveFailureReason.InvalidMovingGroup;
       }
@@ -320,13 +324,16 @@ export class PuzzleMovePlanner {
       if (checkedPieceIds.has(step.pieceId)) {
         continue;
       }
-      const group = request.connectedGroupByPieceId.get(step.pieceId);
-      if (!group || !group.has(step.pieceId)) {
+      const group = request.groupByPieceId.get(step.pieceId);
+      if (!group || !group.pieceIds.has(step.pieceId)) {
         return PuzzleMoveFailureReason.InvalidOccupancy;
       }
-      for (const groupPieceId of group) {
-        const memberGroup = request.connectedGroupByPieceId.get(groupPieceId);
-        if (!memberGroup || !this.areSameMembers(memberGroup, group)) {
+      for (const groupPieceId of group.pieceIds) {
+        const memberGroup = request.groupByPieceId.get(groupPieceId);
+        if (
+          !memberGroup ||
+          !this.areSameMembers(memberGroup.pieceIds, group.pieceIds)
+        ) {
           return PuzzleMoveFailureReason.InvalidOccupancy;
         }
         if (!displacedPieceIds.has(groupPieceId)) {
@@ -336,7 +343,7 @@ export class PuzzleMovePlanner {
 
       let expectedRowOffset: number | null = null;
       let expectedColumnOffset: number | null = null;
-      for (const groupPieceId of group) {
+      for (const groupPieceId of group.pieceIds) {
         const groupStep = stepByPieceId.get(groupPieceId);
         if (!groupStep) {
           return PuzzleMoveFailureReason.IncompleteTargetGroup;

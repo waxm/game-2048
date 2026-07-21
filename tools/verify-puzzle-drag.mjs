@@ -112,15 +112,24 @@ function countCorrectAdjacentEdges(rows, columns, pieceIdsByCell) {
 function createConnectedGroups(pieceCount, connectedGroups) {
   const result = new Map();
   for (let pieceId = 0; pieceId < pieceCount; pieceId += 1) {
-    result.set(pieceId, new Set([pieceId]));
+    result.set(pieceId, createGroup([pieceId]));
   }
   for (const pieceIds of connectedGroups) {
-    const group = new Set(pieceIds);
-    for (const pieceId of group) {
+    const group = createGroup(pieceIds);
+    for (const pieceId of group.pieceIds) {
       result.set(pieceId, group);
     }
   }
   return result;
+}
+
+/** 创建符合正式规划器结构的只读组合测试对象。 */
+function createGroup(pieceIds) {
+  const members = new Set(pieceIds);
+  return {
+    id: Math.min(...members),
+    pieceIds: members,
+  };
 }
 
 /** 根据测试棋盘和拖拽参数生成一次移动计划。 */
@@ -144,7 +153,7 @@ function planDrag({
     pieceIdsByCell,
     movingPieceIds: movingSet,
     sourceCellByPieceId,
-    connectedGroupByPieceId: createConnectedGroups(
+    groupByPieceId: createConnectedGroups(
       rows * columns,
       [movingPieceIds, ...targetConnectedGroups],
     ),
@@ -223,7 +232,7 @@ function createActualConnectedGroups(rows, columns, pieceIdsByCell) {
     if (visited.has(pieceId)) {
       continue;
     }
-    const group = new Set();
+    const memberPieceIds = new Set();
     const pending = [pieceId];
     while (pending.length > 0) {
       const currentPieceId = pending.pop();
@@ -231,14 +240,15 @@ function createActualConnectedGroups(rows, columns, pieceIdsByCell) {
         continue;
       }
       visited.add(currentPieceId);
-      group.add(currentPieceId);
+      memberPieceIds.add(currentPieceId);
       for (const neighborPieceId of adjacency.get(currentPieceId)) {
         if (!visited.has(neighborPieceId)) {
           pending.push(neighborPieceId);
         }
       }
     }
-    for (const groupPieceId of group) {
+    const group = createGroup(memberPieceIds);
+    for (const groupPieceId of group.pieceIds) {
       result.set(groupPieceId, group);
     }
   }
@@ -248,22 +258,22 @@ function createActualConnectedGroups(rows, columns, pieceIdsByCell) {
 /** 校验成功计划没有拆开或改变移动前已经存在的任何连接组形状。 */
 function validateExistingGroupPreservation(
   columns,
-  connectedGroupByPieceId,
+  groupByPieceId,
   plan,
 ) {
   const stepByPieceId = new Map(plan.moves.map((move) => [move.pieceId, move]));
   const checkedPieceIds = new Set();
-  for (const [pieceId, group] of connectedGroupByPieceId) {
+  for (const [pieceId, group] of groupByPieceId) {
     if (checkedPieceIds.has(pieceId)) {
       continue;
     }
-    const movedSteps = [...group]
+    const movedSteps = [...group.pieceIds]
       .map((groupPieceId) => stepByPieceId.get(groupPieceId))
       .filter(Boolean);
     if (movedSteps.length > 0) {
       assert.equal(
         movedSteps.length,
-        group.size,
+        group.pieceIds.size,
         "有效计划只移动了旧连接组的一部分。",
       );
       const firstStep = movedSteps[0];
@@ -287,7 +297,7 @@ function validateExistingGroupPreservation(
         );
       }
     }
-    for (const groupPieceId of group) {
+    for (const groupPieceId of group.pieceIds) {
       checkedPieceIds.add(groupPieceId);
     }
   }
@@ -530,7 +540,7 @@ expectFailure(
     pieceIdsByCell: [0, 1, 2, 3],
     movingPieceIds: new Set([0]),
     sourceCellByPieceId: new Map([[0, 0]]),
-    connectedGroupByPieceId: createConnectedGroups(4, [[0, 1]]),
+    groupByPieceId: createConnectedGroups(4, [[0, 1]]),
     anchorPieceId: 0,
     targetAnchorCellIndex: 2,
   });
@@ -662,13 +672,14 @@ for (const [rows, columns, simulationCount] of [
     simulationIndex += 1
   ) {
     const pieceIdsByCell = createShuffledBoard(rows * columns);
-    const connectedGroupByPieceId = createActualConnectedGroups(
+    const groupByPieceId = createActualConnectedGroups(
       rows,
       columns,
       pieceIdsByCell,
     );
     const anchorPieceId = pieceIdsByCell[nextRandomIndex(pieceIdsByCell.length)];
-    const movingPieceIds = connectedGroupByPieceId.get(anchorPieceId);
+    const movingGroup = groupByPieceId.get(anchorPieceId);
+    const movingPieceIds = movingGroup.pieceIds;
     const sourceCellByPieceId = new Map(
       [...movingPieceIds].map((pieceId) => [
         pieceId,
@@ -681,7 +692,7 @@ for (const [rows, columns, simulationCount] of [
       pieceIdsByCell,
       movingPieceIds,
       sourceCellByPieceId,
-      connectedGroupByPieceId,
+      groupByPieceId,
       anchorPieceId,
       targetAnchorCellIndex: nextRandomIndex(pieceIdsByCell.length),
     });
@@ -689,7 +700,7 @@ for (const [rows, columns, simulationCount] of [
       applyAndValidatePlan(pieceIdsByCell, plan);
       validateExistingGroupPreservation(
         columns,
-        connectedGroupByPieceId,
+        groupByPieceId,
         plan,
       );
     } else {
