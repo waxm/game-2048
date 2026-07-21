@@ -68,6 +68,13 @@ class MockEventTarget {
   reset() {
     this._listeners.clear();
   }
+
+  /** 删除当前事件目标上由指定 target 注册的全部监听。 */
+  targetOff(target) {
+    for (const eventName of [...this._listeners.keys()]) {
+      this.off(eventName, undefined, target);
+    }
+  }
 }
 
 /** 测试专用 Cocos Component。 */
@@ -77,6 +84,14 @@ export class Component {
 
   /** 组件当前是否有效。 */
   isValid = true;
+
+  /** unscheduleAllCallbacks 调用次数。 */
+  unscheduleAllCount = 0;
+
+  /** 模拟清理组件通过 schedule 注册的全部任务。 */
+  unscheduleAllCallbacks() {
+    this.unscheduleAllCount += 1;
+  }
 }
 
 /** 测试专用三维向量。 */
@@ -128,6 +143,22 @@ export class Quat {
   /** 返回独立副本。 */
   clone() {
     return new Quat(this.x, this.y, this.z, this.w);
+  }
+}
+
+/** 测试专用 Tween 静态控制器。 */
+export class Tween {
+  /** 已执行停止操作的目标记录。 */
+  static stoppedTargets = [];
+
+  /** 记录指定目标的全部 Tween 已停止。 */
+  static stopAllByTarget(target) {
+    this.stoppedTargets.push(target);
+  }
+
+  /** 清空 Tween 测试记录。 */
+  static reset() {
+    this.stoppedTargets.length = 0;
   }
 }
 
@@ -956,6 +987,7 @@ export const __mock = {
     assetManager.reset();
     director.reset();
     game.reset();
+    Tween.reset();
     sys.localStorage.clear();
   },
 };

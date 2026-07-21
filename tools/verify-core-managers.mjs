@@ -379,9 +379,13 @@ test("SceneManager 忽略并发请求并取消 reset 前的旧回调", async () 
   assert.equal(SceneManager.currentSceneName, "");
 });
 
-test("SceneBase 固定进入退出顺序并校验必填绑定", () => {
+test("SceneBase 固定生命周期顺序并执行统一兜底清理", async () => {
   class RecordingScene extends SceneBase {
     calls = [];
+
+    eventCount = 0;
+
+    nodeEventCount = 0;
 
     onEnter() {
       this.calls.push("enter");
@@ -389,6 +393,17 @@ test("SceneBase 固定进入退出顺序并校验必填绑定", () => {
 
     bindEvents() {
       this.calls.push("bind");
+      EventCenter.on(
+        "scene-fallback-event",
+        () => (this.eventCount += 1),
+        this,
+      );
+      TimerManager.loop(() => undefined, 1, this);
+      this.node.on(
+        "scene-node-event",
+        () => (this.nodeEventCount += 1),
+        this,
+      );
     }
 
     unbindEvents() {
@@ -403,21 +418,124 @@ test("SceneBase 固定进入退出顺序并校验必填绑定", () => {
       this.onLoad();
     }
 
+    destroyForTest() {
+      this.onDestroy();
+    }
+
     validateForTest(bindings) {
       this.assertRequiredBindings(bindings);
+    }
+
+    acquireForTest(path) {
+      return this.acquireResource(path, cocos.Asset);
     }
   }
 
   const node = new cocos.Node("Scene");
   const scene = node.addComponent(new RecordingScene());
   scene.loadForTest();
-  assert.deepEqual(scene.calls, ["enter", "bind"]);
+  assert.deepEqual(scene.calls, ["bind", "enter"]);
   assert.throws(
     () => scene.validateForTest({ uiRoot: null }),
     /Scene 节点未绑定：Scene\.uiRoot/,
   );
+
+  const sceneAsset = new cocos.Asset();
+  cocos.resources.register("scene/scoped", sceneAsset);
+  const handle = await scene.acquireForTest("scene/scoped");
+  assert.equal(sceneAsset.refCount, 1);
+  assert.equal(handle.released, false);
+
+  scene.destroyForTest();
+  assert.deepEqual(scene.calls, ["bind", "enter", "unbind", "exit"]);
+  assert.equal(EventCenter.listenerCount("scene-fallback-event"), 0);
+  assert.equal(TimerManager.count(scene), 0);
+  assert.equal(scene.unscheduleAllCount, 1);
+  assert.deepEqual(cocos.Tween.stoppedTargets, [scene, node]);
+  assert.equal(sceneAsset.refCount, 0);
+  assert.equal(handle.released, true);
+
+  EventCenter.emit("scene-fallback-event");
+  node.emit("scene-node-event");
+  assert.equal(scene.eventCount, 0);
+  assert.equal(scene.nodeEventCount, 0);
   node.destroy();
-  assert.deepEqual(scene.calls, ["enter", "bind", "unbind", "exit"]);
+  assert.deepEqual(scene.calls, ["bind", "enter", "unbind", "exit"]);
+  assert.equal(scene.unscheduleAllCount, 1);
+});
+
+test("SceneBase 进入失败时隔离清理错误并完成回滚", async () => {
+  class FailingScene extends SceneBase {
+    calls = [];
+
+    bindEvents() {
+      this.calls.push("bind");
+      EventCenter.on("failing-scene-event", () => undefined, this);
+      TimerManager.loop(() => undefined, 1, this);
+    }
+
+    onEnter() {
+      this.calls.push("enter");
+      throw new Error("预期场景进入错误");
+    }
+
+    unbindEvents() {
+      this.calls.push("unbind");
+      throw new Error("预期事件注销错误");
+    }
+
+    onExit() {
+      this.calls.push("exit");
+      throw new Error("预期场景退出错误");
+    }
+
+    loadForTest() {
+      this.onLoad();
+    }
+  }
+
+  const node = new cocos.Node("FailingScene");
+  const scene = node.addComponent(new FailingScene());
+  Logger.setLevel(LogLevel.Error);
+  const { calls } = await captureConsole(["error"], async () => {
+    assert.throws(() => scene.loadForTest(), /预期场景进入错误/);
+  });
+  assert.ok(calls.length >= 3);
+  assert.deepEqual(scene.calls, ["bind", "enter", "unbind", "exit"]);
+  assert.equal(EventCenter.listenerCount("failing-scene-event"), 0);
+  assert.equal(TimerManager.count(scene), 0);
+  assert.equal(scene.unscheduleAllCount, 1);
+
+  node.destroy();
+  assert.deepEqual(scene.calls, ["bind", "enter", "unbind", "exit"]);
+  assert.equal(scene.unscheduleAllCount, 1);
+});
+
+test("SceneBase 释放退出后才完成加载的场景资源", async () => {
+  class AsyncResourceScene extends SceneBase {
+    loadForTest() {
+      this.onLoad();
+    }
+
+    acquireForTest(path) {
+      return this.acquireResource(path, cocos.Asset);
+    }
+  }
+
+  const node = new cocos.Node("AsyncResourceScene");
+  const scene = node.addComponent(new AsyncResourceScene());
+  scene.loadForTest();
+  const asset = new cocos.Asset();
+  cocos.resources.register("scene/deferred", asset);
+  cocos.resources.deferNextLoad("scene/deferred");
+
+  const request = scene.acquireForTest("scene/deferred");
+  await flushMicrotasks();
+  node.destroy();
+  cocos.resources.completeNextLoad("scene/deferred");
+  await assert.rejects(request, /场景已经退出，资源结果已释放/);
+  assert.equal(asset.refCount, 0);
+  assert.equal(ResManager.getActiveHandleCount(), 0);
 });
 
 test("ResManager 保持单资源、目录、JSON 和 Prefab 引用成对", async () => {
