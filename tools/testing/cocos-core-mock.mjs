@@ -79,6 +79,58 @@ export class Component {
   isValid = true;
 }
 
+/** 测试专用三维向量。 */
+export class Vec3 {
+  /** 创建三维向量。 */
+  constructor(x = 0, y = 0, z = 0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+
+  /** X 分量。 */
+  x;
+
+  /** Y 分量。 */
+  y;
+
+  /** Z 分量。 */
+  z;
+
+  /** 返回独立副本。 */
+  clone() {
+    return new Vec3(this.x, this.y, this.z);
+  }
+}
+
+/** 测试专用四元数。 */
+export class Quat {
+  /** 创建四元数。 */
+  constructor(x = 0, y = 0, z = 0, w = 1) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+    this.w = w;
+  }
+
+  /** X 分量。 */
+  x;
+
+  /** Y 分量。 */
+  y;
+
+  /** Z 分量。 */
+  z;
+
+  /** W 分量。 */
+  w;
+
+  /** 返回独立副本。 */
+  clone() {
+    return new Quat(this.x, this.y, this.z, this.w);
+  }
+}
+
 /** 测试专用 Cocos Node。 */
 export class Node extends MockEventTarget {
   /** 核心框架使用到的节点事件。 */
@@ -97,6 +149,18 @@ export class Node extends MockEventTarget {
 
   /** 节点显示状态。 */
   active = true;
+
+  /** 节点本地坐标。 */
+  position = new Vec3();
+
+  /** 节点本地旋转。 */
+  rotation = new Quat();
+
+  /** 节点本地缩放。 */
+  scale = new Vec3(1, 1, 1);
+
+  /** 节点渲染层。 */
+  layer = 0;
 
   /** 当前父节点。 */
   parent = null;
@@ -143,7 +207,35 @@ export class Node extends MockEventTarget {
 
   /** 按构造函数取得第一个匹配组件。 */
   getComponent(type) {
+    if (typeof type === "string") {
+      return (
+        this._components.find(
+          (component) => component.constructor.name === type,
+        ) ?? null
+      );
+    }
     return this._components.find((component) => component instanceof type) ?? null;
+  }
+
+  /** 设置本地坐标。 */
+  setPosition(valueOrX, y, z) {
+    this.position =
+      valueOrX instanceof Vec3
+        ? valueOrX.clone()
+        : new Vec3(valueOrX ?? 0, y ?? 0, z ?? 0);
+  }
+
+  /** 设置本地旋转。 */
+  setRotation(rotation) {
+    this.rotation = rotation.clone();
+  }
+
+  /** 设置本地缩放。 */
+  setScale(valueOrX, y, z) {
+    this.scale =
+      valueOrX instanceof Vec3
+        ? valueOrX.clone()
+        : new Vec3(valueOrX ?? 1, y ?? valueOrX ?? 1, z ?? valueOrX ?? 1);
   }
 
   /**

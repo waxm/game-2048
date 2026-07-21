@@ -773,23 +773,145 @@ test("AudioManager 丢弃切到后台后才完成加载的音效", async () => {
   assert.deepEqual(effectSource.oneShotCalls, []);
 });
 
-test("PoolManager 预热、获取、回收和清空节点", () => {
-  const prefab = new cocos.Prefab(() => new cocos.Node("PooledNode"));
-  PoolManager.prewarm("effects", prefab, 2);
-  assert.equal(PoolManager.size("effects"), 2);
+test("PoolManager 持有 Prefab、复位节点并执行复用协议", async () => {
+  /** 记录对象池业务生命周期调用。 */
+  class RecordingPoolLifecycle extends cocos.Component {
+    /** reuse 收到的全部参数记录。 */
+    reuseCalls = [];
 
-  const firstNode = PoolManager.get("effects");
+    /** unuse 调用次数。 */
+    unuseCount = 0;
+
+    /** 记录本次复用参数。 */
+    reuse(...args) {
+      this.reuseCalls.push(args);
+    }
+
+    /** 记录一次回收清理。 */
+    unuse() {
+      this.unuseCount += 1;
+    }
+  }
+
+  const prefab = new cocos.Prefab(() => {
+    const node = new cocos.Node("PooledNode");
+    node.setPosition(2, 3, 4);
+    node.setScale(1.5, 1.5, 1.5);
+    node.layer = 7;
+    node.addComponent(new RecordingPoolLifecycle());
+    return node;
+  });
+  cocos.resources.register("prefabs/effect", prefab);
+
+  assert.equal(
+    await PoolManager.create("effects", {
+      prefabPath: "prefabs/effect",
+      initialSize: 2,
+      maxSize: 2,
+      lifecycleComponent: RecordingPoolLifecycle,
+    }),
+    true,
+  );
+  assert.equal(prefab.refCount, 1);
+  assert.deepEqual(PoolManager.getStats("effects"), {
+    available: 2,
+    inUse: 0,
+    total: 2,
+    maxSize: 2,
+  });
+
+  const firstNode = PoolManager.get("effects", "spark", 3);
   assert.ok(firstNode);
-  assert.equal(PoolManager.size("effects"), 1);
-  PoolManager.put("effects", firstNode);
-  assert.equal(PoolManager.size("effects"), 2);
+  const firstLifecycle = firstNode.getComponent(RecordingPoolLifecycle);
+  assert.deepEqual(firstLifecycle.reuseCalls, [["spark", 3]]);
+  firstNode.setPosition(99, 98, 97);
+  firstNode.setScale(9, 8, 7);
+  firstNode.active = false;
+  firstNode.layer = 99;
+  assert.equal(PoolManager.put("effects", firstNode), true);
+  assert.equal(firstLifecycle.unuseCount, 2);
+  assert.equal(PoolManager.put("effects", firstNode), false);
 
-  PoolManager.clear("effects");
-  assert.equal(PoolManager.size("effects"), 0);
-  assert.equal(firstNode.isValid, false);
-  const fallbackNode = PoolManager.get("effects", prefab);
-  assert.ok(fallbackNode);
-  assert.equal(fallbackNode.isValid, true);
+  const restoredNode = PoolManager.get("effects");
+  assert.equal(restoredNode, firstNode);
+  assert.deepEqual(restoredNode.position, new cocos.Vec3(2, 3, 4));
+  assert.deepEqual(restoredNode.scale, new cocos.Vec3(1.5, 1.5, 1.5));
+  assert.equal(restoredNode.active, true);
+  assert.equal(restoredNode.layer, 7);
+
+  const secondNode = PoolManager.get("effects");
+  const overflowNode = PoolManager.get("effects");
+  assert.ok(secondNode);
+  assert.ok(overflowNode);
+  assert.equal(PoolManager.put("effects", restoredNode), true);
+  assert.equal(PoolManager.put("effects", secondNode), true);
+  assert.equal(PoolManager.put("effects", overflowNode), false);
+  assert.equal(overflowNode.isValid, false);
+  assert.deepEqual(PoolManager.getStats("effects"), {
+    available: 2,
+    inUse: 0,
+    total: 2,
+    maxSize: 2,
+  });
+
+  const checkedOutNode = PoolManager.get("effects");
+  assert.equal(PoolManager.clear("effects"), false);
+  assert.equal(prefab.refCount, 1);
+  assert.equal(checkedOutNode.isValid, true);
+  assert.equal(PoolManager.clear("effects", true), true);
+  assert.equal(checkedOutNode.isValid, false);
+  assert.equal(prefab.refCount, 0);
+  assert.equal(PoolManager.has("effects"), false);
+});
+
+test("PoolManager 取消加载中创建并拒绝缺失生命周期组件", async () => {
+  const deferredPrefab = new cocos.Prefab(
+    () => new cocos.Node("DeferredPooledNode"),
+  );
+  cocos.resources.register("prefabs/deferred-pool", deferredPrefab);
+  cocos.resources.deferNextLoad("prefabs/deferred-pool");
+
+  const pendingCreate = PoolManager.create("deferred", {
+    prefabPath: "prefabs/deferred-pool",
+  });
+  await flushMicrotasks();
+  assert.equal(PoolManager.clear("deferred"), true);
+  cocos.resources.completeNextLoad("prefabs/deferred-pool");
+  assert.equal(await pendingCreate, false);
+  assert.equal(deferredPrefab.refCount, 0);
+  assert.equal(PoolManager.has("deferred"), false);
+
+  class MissingPoolLifecycle extends cocos.Component {}
+  const invalidPrefab = new cocos.Prefab(
+    () => new cocos.Node("InvalidPooledNode"),
+  );
+  cocos.resources.register("prefabs/invalid-pool", invalidPrefab);
+  await assert.rejects(
+    PoolManager.create("invalid", {
+      prefabPath: "prefabs/invalid-pool",
+      initialSize: 1,
+      lifecycleComponent: MissingPoolLifecycle,
+    }),
+    /reuse\/unuse/,
+  );
+  assert.equal(invalidPrefab.refCount, 0);
+  assert.equal(PoolManager.has("invalid"), false);
+
+  const retryPrefab = new cocos.Prefab(
+    () => new cocos.Node("RetryPooledNode"),
+  );
+  cocos.resources.failNextLoad("prefabs/retry-pool");
+  await assert.rejects(
+    PoolManager.create("retry", { prefabPath: "prefabs/retry-pool" }),
+    /模拟资源加载失败/,
+  );
+  cocos.resources.register("prefabs/retry-pool", retryPrefab);
+  assert.equal(
+    await PoolManager.create("retry", { prefabPath: "prefabs/retry-pool" }),
+    true,
+  );
+  assert.equal(PoolManager.clear("retry"), true);
+  assert.equal(retryPrefab.refCount, 0);
 });
 
 test("App 初始化幂等并按顺序重置全局状态", async () => {
@@ -811,7 +933,11 @@ test("App 初始化幂等并按顺序重置全局状态", async () => {
   EventCenter.on("reset-event", () => (eventCount += 1));
   TimerManager.delay(() => undefined, 1);
   const prefab = new cocos.Prefab(() => new cocos.Node("Pooled"));
-  PoolManager.prewarm("reset-pool", prefab, 1);
+  cocos.resources.register("prefabs/reset-pool", prefab);
+  await PoolManager.create("reset-pool", {
+    prefabPath: "prefabs/reset-pool",
+    initialSize: 1,
+  });
   const asset = new cocos.Asset();
   cocos.resources.register("reset/asset", asset);
   const handle = await ResManager.acquire("reset/asset", cocos.Asset);
@@ -823,6 +949,7 @@ test("App 初始化幂等并按顺序重置全局状态", async () => {
   assert.equal(eventCount, 0);
   assert.equal(TimerManager.count(), 0);
   assert.equal(PoolManager.size("reset-pool"), 0);
+  assert.equal(prefab.refCount, 0);
   assert.equal(handle.released, true);
   assert.equal(asset.refCount, 0);
   assert.equal(StorageManager.get("persistent", 0), 7);
