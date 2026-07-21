@@ -1,234 +1,104 @@
-# Work AI 框架规范
+# Work AI 工程说明
 
-## 项目目标
+## 项目范围
 
-这个框架用于开发基于 Cocos Creator 3.8.4 的小型 2D 游戏。
+- 引擎版本：Cocos Creator 3.8.4。
+- 设计尺寸：竖屏 `640 x 1136`。
+- 当前正式内容只包含可复用框架和拼图游戏业务。
+- 一次性试验、外部设计转换产物和已经停用的玩法不得留在正式目录中。
 
-第一版框架要保持小巧、清晰、容易复用，方便后续复制到新的小游戏项目中。
-
-当前项目设计尺寸统一为竖屏 `640 x 1136`。
-
-## 目录结构
-
-```text
-assets/
-  app/
-    core/              # 所有游戏都可以复用的框架代码
-    game/              # 当前游戏的业务逻辑
-    modules/           # 可复用的玩法模块或功能模块
-    ui/                # 按功能模块分类的 UI 脚本和 UI 辅助工具
-      common/          # 通用 UI
-      home/            # 首页和大厅 UI
-      game/            # 游戏内面板和玩法显示组件
-      popup/           # 独立弹窗
-      item/            # 列表项和可复用小组件
-      lanhu/           # 蓝湖工具生成的 UI 脚本
-    config/            # 本地配置文件
-    data/              # 运行时数据和存档模型
-    audio/             # 音频定义和音频封装
-    platform/          # 平台适配层
-    utils/             # 项目级工具类
-    scenes/            # 场景脚本
-  scene/               # Cocos Creator 场景文件
-  bundles/
-    common/            # 通用分包资源
-    lobby/             # 大厅和菜单资源
-    gameplay/          # 游戏内资源
-  resources/           # 少量全局动态加载资源
-```
-
-## Prefab 目录规范
-
-所有动态加载的 Prefab 统一放在 `assets/resources/prefabs`，并按用途分类：
+## 代码结构
 
 ```text
-assets/resources/prefabs/
-  common/               # 通用组件，例如通用按钮、通用弹窗、加载界面
-  home/                 # 首页和大厅 UI，例如 UIHomePanel
-  game/                 # 游戏内 UI 和玩法对象，例如 UIGamePanel、PuzzlePiece
-  popup/                # 独立弹窗，例如设置、通关、失败弹窗
-  item/                 # 列表项和可复用小组件
-  lanhu/                # 蓝湖转换工具生成的 Prefab
+assets/app/
+  core/               # 与具体玩法无关的可复用框架
+  game/               # 拼图配置、状态、控制器和纯逻辑
+  scenes/             # Boot、Lobby、Game 场景脚本
+  ui/
+    common/           # 通用错误恢复面板
+    home/             # 大厅面板
+    game/             # 拼图主面板、拼图块和边框渲染
+    popup/            # 通关与失败弹窗
+
+assets/scene/          # Boot、Lobby、Game 场景资源
+assets/resources/
+  prefabs/             # 按 common、home、game、popup 分类的正式 Prefab
+  textures/game/levels # 按关卡编号存放的拼图完整原图
 ```
 
-- 不要把新增 Prefab 直接放在 `assets/resources/prefabs` 根目录。
-- 加载路径必须包含模块目录，例如首页 Prefab 使用 `prefabs/home/UIHomePanel`。
-- 蓝湖转换生成的 Prefab 统一使用 `prefabs/lanhu/` 路径，避免与手工制作的业务 Prefab 混放。
-
-## UI 代码目录规范
-
-UI TypeScript 脚本必须在 `assets/app/ui` 下按功能模块分类，禁止统一堆放到 `ui/panels`：
+## 核心框架
 
 ```text
-assets/app/ui/
-  common/               # 通用 UI
-  home/                 # 首页和大厅 UI
-  game/                 # 游戏内 UI 和玩法显示组件
-  popup/                # 独立弹窗
-  item/                 # 列表项和可复用小组件
-  lanhu/                # 蓝湖工具生成的 UI 脚本
+App                    # 框架初始化、服务注册和全局重置
+Logger                 # 分级日志
+EventCenter            # 全局事件通信和按 owner 清理
+StorageManager         # 本地存档
+ResManager             # 资源句柄、引用计数和 Bundle 管理
+UIBase / UIManager     # UI 生命周期、缓存和并发打开管理
+SceneBase / SceneManager # 场景生命周期、切换结果和失败回滚
+AudioManager           # 跨场景音乐与音效
+PoolManager            # 带资源所有权的节点对象池
+TimerManager           # 延迟、循环计时和按 owner 清理
 ```
 
-- UI 脚本和手工 Prefab 应尽量使用相同模块目录，例如 `ui/game/UIGamePanel.ts` 对应 `prefabs/game/UIGamePanel.prefab`。
-- 蓝湖生成脚本和 Prefab 分别放在 `ui/lanhu`、`prefabs/lanhu`。
-- 移动已经绑定 Prefab 的脚本时，必须同时移动其 `.meta` 文件，禁止重新生成 UUID。
-- 新增模块可以创建语义明确的新目录，但不能重新建立收纳所有面板的 `panels` 目录。
-
-## Texture 目录规范
-
-动态加载和 Prefab 使用的图片统一放在 `assets/resources/textures`，并与 UI、Prefab 使用同一套模块名：
-
-```text
-assets/resources/textures/
-  common/               # 通用图片
-  home/                 # 首页和大厅图片
-  game/                 # 游戏内图片和关卡原图
-    levels/             # 按关卡继续分类的整图资源
-  popup/                # 弹窗图片
-  item/                 # 列表项和小组件图片
-  lanhu/                # 蓝湖 Prefab 使用的切图
-```
-
-- 不允许把新增图片直接放在 `assets/resources` 或 `assets/resources/textures` 根目录。
-- 代码、Prefab 和 Texture 的模块归属应保持一致；通用资源必须进入 `common`。
-- 加载路径必须包含模块目录，例如关卡图使用 `textures/game/levels/level_001/level_001_source/spriteFrame`。
-- 移动图片时必须同时移动 `.meta`，保持 Texture 和 SpriteFrame UUID 不变；有动态加载代码时同步修改路径。
-- 蓝湖生成工具必须把切图写入 `textures/lanhu`，不能恢复旧的 `resources/lanhu` 目录。
-
-## Prefab 节点绑定与校验
-
-Prefab 驱动的 UI 必须让 Prefab 成为唯一的节点结构来源：
-
-- 不在 UI 脚本中用 `new Node()` 创建界面节点。
-- 不使用递归、`getChildByName()`、`find()` 等运行时节点查找作为兜底。
-- 所有需要读取或修改的 UI 节点，使用 `@property` 暴露并在 Inspector 中绑定。
-- 在 `onLoad()` 调用 `UIBase.assertRequiredBindings()`；任何缺失引用都会直接抛出错误，便于第一时间定位 Prefab 配置问题。
-- 不为缺失绑定创建替代节点，也不静默跳过按钮、列表或文本刷新逻辑。
-
-## 命名规范
-
-- 类名使用 `PascalCase`。
-- TypeScript 文件名和导出的类名保持一致。
-- UI 面板脚本以 `UI` 开头，例如 `UIHomePanel.ts`。
-- 管理器类以 `Manager` 结尾，例如 `AudioManager.ts`。
-- 场景脚本以 `Scene` 结尾，例如 `BootScene.ts`。
-- 数据类以 `Data` 结尾，例如 `PlayerData.ts`。
-- 配置类以 `Config` 结尾，例如 `LevelConfig.ts`。
-- 事件名统一放在一个枚举或常量文件中定义。
-
-## 第一批框架模块
-
-优先搭建这些模块：
-
-```text
-App
-Logger
-EventCenter
-StorageManager
-ResManager
-UIBase
-UIManager
-SceneBase
-SceneManager
-AudioManager
-PoolManager
-TimerManager
-```
+资源、事件、计时器、Tween、按钮回调和节点监听都必须有明确所有者，并在对应生命周期结束时释放。异步操作返回后必须重新确认请求和宿主对象仍然有效。
 
 ## 启动流程
 
 ```text
 BootScene
   -> App.init()
-  -> ConfigManager.init()
-  -> StorageManager.init()
-  -> AudioManager.init()
-  -> UIManager.init()
-  -> SceneManager.load("Lobby")
-```
+  -> 加载 Lobby.scene
 
-当前已经实现 `BootScene -> App.init()`，并接入存档、音频、UI 和场景状态初始化。
-等真正创建 `Lobby` 场景资源后，再让启动场景自动切换到大厅。
-
-## 当前进度
-
-```text
-第 1 步：确认框架目标，已完成
-第 2 步：创建项目目录规范，已完成
-第 3 步：命名规范和核心脚本模板，已完成
-第 4 步：启动流程，已完成
-第 5 步：资源管理 ResManager，已完成
-第 6 步：UI 管理 UIManager，已完成
-第 7 步：场景管理 SceneManager，已完成
-第 8 步：音频管理 AudioManager，已完成
-第 9 步：本地存档 StorageManager，已完成
-第 10 步：对象池和计时器，已完成
-第 11 步：UI 和场景代码模板，已完成
-第 12 步：小游戏 Demo 验证框架，已完成
-```
-
-## Demo 验证游戏
-
-当前 Demo 是一个限时点击得分游戏：
-
-```text
 LobbyScene
-  -> UIHomePanel
-  -> 点击屏幕
-  -> SceneManager.load("Game")
+  -> 打开 UIHomePanel
+  -> 读取已解锁关卡
+  -> 选择关卡并加载 Game.scene
 
 GameScene
-  -> UIGamePanel
-  -> DemoGameController
-  -> 读取 DemoGameConfig.json
-  -> 点击得分
-  -> 倒计时结束或达成目标
-  -> 保存最高分和金币
-  -> 点击返回大厅
+  -> 打开 UIGamePanel
+  -> 创建 PuzzleGameController
+  -> 运行关卡、结算、重玩、切关或返回大厅
 ```
 
-Demo 已经用到这些框架模块：
+场景或 UI 加载失败时必须显示明确的重试和返回入口。Game 面板成功打开后才能创建控制器，避免初始状态事件早于 UI 监听。
+
+## 拼图规则
+
+- 关卡只保存完整原图，运行时根据 `rows × columns` 切分 SpriteFrame。
+- 棋盘为无空隙规则网格，拼图落点必须位于有效格子。
+- 正确相邻的拼图形成软组合，拖拽时整组一起移动。
+- 源组合保持形状，目标位置已有组合允许按移动结果拆分。
+- 移动规划必须先生成完整双射，再一次性提交棋盘占用状态。
+- 每次有效移动后重新计算组合、最大连接数量和组合外围边框。
+- 全部拼图进入同一组合时完成关卡；限时关卡耗尽时间后失败。
+
+## 关卡资源
+
+每关使用固定目录和文件名：
 
 ```text
-App               # 启动框架
-Logger            # 输出流程日志
-EventCenter       # 游戏事件通信
-ResManager        # 读取 Demo 配置
-UIBase            # UI 面板生命周期
-UIManager         # 管理首页和游戏面板
-SceneBase         # 场景生命周期
-SceneManager      # 大厅和游戏场景切换
-AudioManager      # 音频入口和音量设置
-StorageManager    # 保存最高分和金币
-PoolManager       # 复用得分飘字节点
-TimerManager      # 倒计时和飘字回收
+textures/game/levels/level_001/level_001_source.png
+textures/game/levels/level_002/level_002_source.png
 ```
 
-在 Cocos Creator 中需要创建三个场景：
+玩法参数维护在 `tools/config/puzzle-levels.json`。运行 `npm run generate:levels` 根据真实资源目录生成关卡目录；运行时加载路径必须以 `/spriteFrame` 结尾，关卡 SpriteFrame 必须关闭动态合图。
+
+## Prefab 约束
+
+- 正式 Prefab 必须按模块存放；当前只使用 `prefabs/common`、`prefabs/home`、`prefabs/game` 和 `prefabs/popup`。
+- UI 节点结构只来源于 Prefab，业务脚本不得运行时补建或递归查找节点。
+- 脚本使用的节点和组件必须通过 `@property` 在 Inspector 显式绑定。
+- 新增正式 Scene 或 Prefab 时必须登记到 `tools/cocos-asset-manifest.mjs`。
+
+## 验证入口
 
 ```text
-assets/scene/Boot.scene        # 挂 BootScene
-assets/scene/Lobby.scene       # 挂 LobbyScene
-assets/scene/Game.scene        # 挂 GameScene
+npm run typecheck              # TypeScript 编译检查
+npm run verify:core            # 核心框架验证
+npm run validate:levels        # 关卡配置与图片检查
+npm run verify:puzzle-groups   # 拼图组合和轮廓验证
+npm run verify:puzzle-drag     # 拖拽规则与死局模拟
+npm run validate:cocos         # Scene、Prefab、UUID 和绑定校验
+npm run verify                 # 执行全部验证
 ```
-
-场景名称要和代码里的 `Boot`、`Lobby`、`Game` 保持一致。
-
-## 开发规则
-
-新增功能前，先判断代码应该放在哪里：
-
-- 框架级通用能力放到 `app/core`。
-- 当前游戏专属逻辑放到 `app/game`。
-- 可复用功能模块放到 `app/modules`。
-- UI 脚本放到 `app/ui`，并继续按 `common`、`home`、`game`、`popup`、`item`、`lanhu` 等模块分类。
-- 场景脚本放到 `app/scenes`。
-
-## 注释规则
-
-- 核心框架代码必须写中文注释。
-- 类、接口、枚举、成员变量、常量、公开方法和生命周期方法都要说明用途。
-- 私有函数只要包含状态判断、事件通信、资源释放、坐标换算、数据转换、循环构建或其他非直观逻辑，也要说明用途。
-- 复杂逻辑块前要说明“为什么这样做”，例如吸附阈值、缓存策略、状态变更顺序。
-- 新增或修改代码时，要同步补齐受影响变量、函数和复杂逻辑的注释。
-- 不写没有意义的逐行翻译式注释。

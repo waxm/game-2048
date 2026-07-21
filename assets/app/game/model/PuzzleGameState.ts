@@ -1,4 +1,4 @@
-/** 第 1 关拼图的运行状态。 */
+/** 当前拼图关卡的运行状态。 */
 export interface PuzzleGameState {
   /** 当前关卡编号。 */
   level: number;
@@ -14,15 +14,6 @@ export interface PuzzleGameState {
 
   /** 是否因时间耗尽而失败。 */
   failed: boolean;
-}
-
-/** 单次拼图落点判定结果。 */
-export interface PuzzlePieceResult {
-  /** 拼图块编号。 */
-  pieceId: number;
-
-  /** 本次是否放置正确。 */
-  correct: boolean;
 }
 
 /** UI 发给控制器的拼图块放下请求。 */

@@ -1,19 +1,11 @@
 # Scenes 场景层
 
-这里放启动、大厅、游戏、结算等场景脚本。
-
-场景资源文件放在 `assets/scene`，这里不放 `.scene` 文件。
-
-场景脚本类名建议以 `Scene` 结尾。
-
-## 当前场景脚本
+场景脚本放在这里，场景资源放在 `assets/scene`。
 
 ```text
-BootScene.ts          # 启动场景脚本，负责调用 App.init()
-LobbyScene.ts         # 大厅场景模板
-GameScene.ts          # 游戏场景模板
+BootScene.ts       # 初始化框架并进入大厅
+LobbyScene.ts      # 打开大厅、选择关卡并进入游戏
+GameScene.ts       # 创建关卡、处理结算、重玩、切关和返回大厅
 ```
 
-在 Cocos Creator 中创建 `assets/scene/Boot.scene` 后，把 `BootScene` 挂到场景里的根节点或专用启动节点上。
-
-要运行第 12 步 Demo，还需要在 `assets/scene` 下创建 `Lobby.scene` 和 `Game.scene`，并分别挂上 `LobbyScene`、`GameScene`。
+项目当前包含 `Boot.scene`、`Lobby.scene` 和 `Game.scene`。场景脚本需要的节点必须在 Scene 中显式绑定；加载失败由通用错误面板提供重试或返回入口。

@@ -201,9 +201,7 @@ function validateProjectRelativePath(relativePath, description) {
 function validateManifestCoverage(manifest) {
   const actualPaths = [
     ...collectFiles(sceneRoot, ".scene"),
-    ...collectFiles(prefabRoot, ".prefab").filter(
-      (filePath) => !filePath.includes(`${path.sep}lanhu${path.sep}`),
-    ),
+    ...collectFiles(prefabRoot, ".prefab"),
   ].map(toProjectPath);
   const manifestPaths = manifest.map((item) => item.assetPath);
   const actualSet = new Set(actualPaths);

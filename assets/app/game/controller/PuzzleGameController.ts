@@ -5,7 +5,6 @@ import { GameEvent } from "../GameEvent";
 import {
   PuzzleGameState,
   PuzzlePieceDropRequest,
-  PuzzlePieceResult,
 } from "../model/PuzzleGameState";
 
 /** 单个拼图关卡的状态控制器。 */
@@ -58,7 +57,7 @@ export class PuzzleGameController {
     );
   }
 
-  /** 判定拼图落点，并依次派发单块结果、进度和通关事件。 */
+  /** 判定拼图落点，并依次派发进度和通关事件。 */
   private onPieceDropRequest = (request?: PuzzlePieceDropRequest): void => {
     if (
       !request ||
@@ -80,13 +79,6 @@ export class PuzzleGameController {
     }
     this._state.completed = this._state.placedCount === this._state.totalCount;
 
-    if (request.connectedPieceIds.length > 0) {
-      const result: PuzzlePieceResult = {
-        pieceId: request.connectedPieceIds[0],
-        correct: true,
-      };
-      EventCenter.emit(GameEvent.PuzzlePieceDropped, result);
-    }
     EventCenter.emit(GameEvent.PuzzleStateChanged, this.getState());
 
     if (this._state.completed) {

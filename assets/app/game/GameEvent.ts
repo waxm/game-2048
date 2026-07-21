@@ -13,23 +13,8 @@ export enum GameEvent {
   /** 携带目标关卡编号开始游戏。 */
   GameStart = "GameStart",
 
-  /** 旧点击得分 Demo 中点击屏幕。保留它以兼容历史示例代码。 */
-  DemoClick = "DemoClick",
-
-  /** 旧点击得分 Demo 的分数变化。保留它以兼容历史示例代码。 */
-  ScoreChanged = "ScoreChanged",
-
-  /** 旧点击得分 Demo 的倒计时变化。保留它以兼容历史示例代码。 */
-  TimeChanged = "TimeChanged",
-
-  /** 旧点击得分 Demo 的游戏结束事件。保留它以兼容历史示例代码。 */
-  GameOver = "GameOver",
-
   /** 拼图组合发生正确吸附后，请求控制器记录已连接拼图。 */
   PuzzlePieceDropRequest = "PuzzlePieceDropRequest",
-
-  /** 控制器返回拼图块落点判定结果。 */
-  PuzzlePieceDropped = "PuzzlePieceDropped",
 
   /** 拼图状态变化。 */
   PuzzleStateChanged = "PuzzleStateChanged",

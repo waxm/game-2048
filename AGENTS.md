@@ -4,7 +4,7 @@
 
 - 引擎版本：Cocos Creator 3.8.4。
 - 设计尺寸：竖屏 `640 x 1136`。
-- UI 输入来源：蓝湖页面、蓝湖 HTML/CSS、切图资源和策划案。
+- UI 输入来源：图片资源、参考视频和策划案。
 - 本文件中的规则适用于新增代码、资源、Prefab，以及对现有内容的修改和迁移。
 
 ## 需求偏差与返工
@@ -28,7 +28,6 @@ UI 代码、Prefab 和 Texture 使用同一套模块名：
 | `game` | 游戏面板、玩法组件和关卡资源 | `assets/app/ui/game` | `assets/resources/prefabs/game` | `assets/resources/textures/game` |
 | `popup` | 独立弹窗 | `assets/app/ui/popup` | `assets/resources/prefabs/popup` | `assets/resources/textures/popup` |
 | `item` | 列表项和可复用小组件 | `assets/app/ui/item` | `assets/resources/prefabs/item` | `assets/resources/textures/item` |
-| `lanhu` | 蓝湖工具生成的内容 | `assets/app/ui/lanhu` | `assets/resources/prefabs/lanhu` | `assets/resources/textures/lanhu` |
 
 目录使用规则：
 
@@ -39,6 +38,7 @@ UI 代码、Prefab 和 Texture 使用同一套模块名：
 - 移动脚本或资源时必须同时移动对应 `.meta`，保持脚本、Texture、SpriteFrame 的 UUID 及 Prefab 绑定不变。
 - 迁移资源后必须同步修改动态加载路径、生成工具和相关文档。
 - 新业务可以增加语义明确的模块目录，但代码、Prefab 和 Texture 的模块归属必须保持一致。
+- 当前正式业务只包含拼图游戏；一次性验证脚本、临时生成资源和外部设计转换产物不得混入 `assets` 正式目录。
 
 ## Prefab 节点绑定
 

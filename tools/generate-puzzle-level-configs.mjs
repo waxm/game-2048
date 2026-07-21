@@ -291,9 +291,6 @@ export function getNextPuzzleLevelNumber(level: number): number | null {
   }
   return PuzzleLevelNumbers[currentIndex + 1];
 }
-
-/** 当前 Demo 使用的第一关配置。 */
-export const PuzzleLevel001Config = PuzzleLevelConfigMap.get(1)!;
 `;
 }
 

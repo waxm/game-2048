@@ -34,7 +34,6 @@ export interface PuzzleLevelConfig {
 export {
   getNextPuzzleLevelNumber,
   getPuzzleLevelConfig,
-  PuzzleLevel001Config,
   PuzzleLevelConfigs,
   PuzzleLevelNumbers,
 } from "./PuzzleLevelCatalog.generated";

@@ -155,7 +155,7 @@ export class UIManager {
     /**
      * 挂载一个已经存在的 UI 面板。
      *
-     * 适合 Demo 阶段用代码创建 UI，或者接管场景里已经摆好的 UI 节点。
+     * 适合调试阶段用代码创建 UI，或者接管场景里已经摆好的 UI 节点。
      */
     public static mount<T extends UIBase>(
         name: string,

@@ -1,8 +1,8 @@
 /**
  * 正式 Cocos 序列化资源校验清单。
  *
- * 新增正式 Scene 或 Prefab 时必须在这里登记。蓝湖试验目录由校验器明确排除，不属于
- * 正式框架资源。每项脚本配置都同时关联源码、ccclass、宿主节点和 Inspector 必填绑定。
+ * 新增正式 Scene 或 Prefab 时必须在这里登记。每项脚本配置都同时关联源码、ccclass、
+ * 宿主节点和 Inspector 必填绑定，未登记的序列化资源会直接导致校验失败。
  */
 export const cocosAssetManifest = [
   {
