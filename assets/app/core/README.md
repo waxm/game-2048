@@ -15,7 +15,7 @@ ui/UIBase.ts           # UI 面板基类
 ui/UIManager.ts        # UI 打开关闭管理
 scene/SceneBase.ts     # 场景脚本基类
 scene/SceneManager.ts  # 场景切换管理
-audio/AudioManager.ts  # 音频播放管理
+audio/AudioManager.ts  # 跨场景常驻的音乐、音效和前后台生命周期管理
 data/StorageManager.ts # 本地存档管理
 pool/PoolManager.ts    # 节点对象池
 timer/TimerManager.ts  # 延迟和循环计时器

@@ -15,12 +15,10 @@ const sceneConfigs = [
   {
     name: "Lobby",
     path: "assets/scene/Lobby.scene",
-    requireAudioSource: false,
   },
   {
     name: "Game",
     path: "assets/scene/Game.scene",
-    requireAudioSource: true,
   },
 ];
 
@@ -29,26 +27,28 @@ function main() {
   for (const config of sceneConfigs) {
     configureScene(config);
   }
-  console.log("Lobby.scene 与 Game.scene 的显式节点绑定已配置完成。");
+  console.log("Lobby.scene 与 Game.scene 的 UIRoot 显式绑定已配置完成。");
 }
 
-/** 为单个场景创建或复用 UIRoot，并绑定场景脚本所需组件。 */
+/** 为单个场景创建或复用 UIRoot，并清理旧版场景音频绑定。 */
 function configureScene(config) {
   const scenePath = path.join(projectRoot, config.path);
   const objects = JSON.parse(fs.readFileSync(scenePath, "utf8"));
   validateReferenceRange(objects, config.name);
 
-  const canvasId = findNodeId(objects, "Canvas");
+  let canvasId = findNodeId(objects, "Canvas");
+  let scriptId = findSceneScriptId(objects, objects[canvasId], config.name);
+  ({ canvasId, scriptId } = removeLegacyAudioSource(
+    objects,
+    canvasId,
+    scriptId,
+    config.name,
+  ));
+
   const canvas = objects[canvasId];
-  const scriptId = findSceneScriptId(objects, canvas, config.name);
   const script = objects[scriptId];
   const uiRootId = ensureUIRoot(objects, canvasId, config.name);
   script.uiRoot = reference(uiRootId);
-
-  if (config.requireAudioSource) {
-    const audioSourceId = ensureAudioSource(objects, canvasId, config.name);
-    script.audioSource = reference(audioSourceId);
-  }
 
   validateSceneBindings(objects, config, scriptId, uiRootId);
   fs.writeFileSync(scenePath, `${JSON.stringify(objects, null, 2)}\n`, "utf8");
@@ -130,33 +130,91 @@ function ensureUITransform(objects, nodeId, sceneName) {
   return newTransformId;
 }
 
-/** 创建或复用 Game Canvas 上的 AudioSource。 */
-function ensureAudioSource(objects, canvasId, sceneName) {
+/**
+ * 删除旧版 GameScene.audioSource Inspector 绑定及其专用组件。
+ *
+ * 音频现已由 AudioManager 的常驻节点统一持有。迁移时同步重排所有内部 __id__，避免
+ * 直接删除序列化数组元素后让后续节点和组件引用整体错位。
+ */
+function removeLegacyAudioSource(objects, canvasId, scriptId, sceneName) {
+  const script = objects[scriptId];
   const canvas = objects[canvasId];
-  const existingId = (canvas._components ?? [])
-    .map((item) => item.__id__)
-    .find((id) => objects[id]?.__type__ === "cc.AudioSource");
-  if (existingId !== undefined) {
-    return existingId;
+  const generatedAudioSourceId = (canvas._components ?? [])
+    .map((component) => component.__id__)
+    .find(
+      (componentId) =>
+        objects[componentId]?.__type__ === "cc.AudioSource" &&
+        objects[componentId]?._id === createStableId(`${sceneName}:AudioSource`),
+    );
+  if (
+    !Object.hasOwn(script, "audioSource") &&
+    generatedAudioSourceId === undefined
+  ) {
+    return { canvasId, scriptId };
   }
 
-  const audioSourceId = objects.length;
-  objects.push({
-    __type__: "cc.AudioSource",
-    _name: "",
-    _objFlags: 0,
-    __editorExtras__: {},
-    node: reference(canvasId),
-    _enabled: true,
-    __prefab: null,
-    _clip: null,
-    _loop: false,
-    _playOnAwake: false,
-    _volume: 1,
-    _id: createStableId(`${sceneName}:AudioSource`),
+  const audioSourceId = script.audioSource?.__id__ ?? generatedAudioSourceId;
+  delete script.audioSource;
+  if (audioSourceId === undefined || audioSourceId === null) {
+    return { canvasId, scriptId };
+  }
+
+  const audioSource = objects[audioSourceId];
+  if (
+    audioSource?.__type__ !== "cc.AudioSource" ||
+    audioSource.node?.__id__ !== canvasId
+  ) {
+    throw new Error(`${sceneName}Scene.audioSource 不是 Canvas 上的 AudioSource。`);
+  }
+
+  canvas._components = (canvas._components ?? []).filter(
+    (component) => component.__id__ !== audioSourceId,
+  );
+
+  let hasRemainingReference = false;
+  visitValue(objects, (referenceId) => {
+    if (referenceId === audioSourceId) {
+      hasRemainingReference = true;
+    }
   });
-  canvas._components.push(reference(audioSourceId));
-  return audioSourceId;
+  if (hasRemainingReference) {
+    throw new Error(`${sceneName}.scene 的旧 AudioSource 仍被其他对象引用。`);
+  }
+
+  objects.splice(audioSourceId, 1);
+  remapReferencesAfterRemoval(objects, audioSourceId);
+  return {
+    canvasId: remapObjectId(canvasId, audioSourceId),
+    scriptId: remapObjectId(scriptId, audioSourceId),
+  };
+}
+
+/** 删除序列化对象后，把所有位于其后的 __id__ 向前移动一位。 */
+function remapReferencesAfterRemoval(value, removedId) {
+  if (Array.isArray(value)) {
+    value.forEach((item) => remapReferencesAfterRemoval(item, removedId));
+    return;
+  }
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  if (Object.keys(value).length === 1 && Object.hasOwn(value, "__id__")) {
+    if (value.__id__ === removedId) {
+      throw new Error(`删除对象后仍存在未处理引用：__id__=${removedId}`);
+    }
+    if (value.__id__ > removedId) {
+      value.__id__ -= 1;
+    }
+    return;
+  }
+  Object.values(value).forEach((item) =>
+    remapReferencesAfterRemoval(item, removedId),
+  );
+}
+
+/** 返回对象删除后的新数组下标。 */
+function remapObjectId(objectId, removedId) {
+  return objectId > removedId ? objectId - 1 : objectId;
 }
 
 /** 创建固定为设计分辨率的 UITransform 序列化对象。 */
@@ -182,11 +240,8 @@ function validateSceneBindings(objects, config, scriptId, uiRootId) {
   if (script.uiRoot?.__id__ !== uiRootId) {
     throw new Error(`${config.name}Scene.uiRoot 绑定失败。`);
   }
-  if (
-    config.requireAudioSource &&
-    objects[script.audioSource?.__id__]?.__type__ !== "cc.AudioSource"
-  ) {
-    throw new Error(`${config.name}Scene.audioSource 绑定失败。`);
+  if (Object.hasOwn(script, "audioSource")) {
+    throw new Error(`${config.name}Scene 不应再持有场景级 audioSource。`);
   }
 }
 

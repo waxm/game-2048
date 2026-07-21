@@ -58,6 +58,16 @@ class MockEventTarget {
       listener.callback.call(listener.target, ...args);
     }
   }
+
+  /** 返回指定事件当前监听数量。 */
+  listenerCount(eventName) {
+    return (this._listeners.get(eventName) ?? []).length;
+  }
+
+  /** 清空当前事件目标的全部监听。 */
+  reset() {
+    this._listeners.clear();
+  }
 }
 
 /** 测试专用 Cocos Component。 */
@@ -263,6 +273,12 @@ export class AudioSource extends Component {
   /** 当前音量。 */
   volume = 1;
 
+  /** 是否允许组件加载后自动播放。 */
+  playOnAwake = false;
+
+  /** 当前是否正在播放背景音乐。 */
+  playing = false;
+
   /** 播放调用次数。 */
   playCount = 0;
 
@@ -278,16 +294,19 @@ export class AudioSource extends Component {
   /** 模拟播放。 */
   play() {
     this.playCount += 1;
+    this.playing = true;
   }
 
   /** 模拟停止。 */
   stop() {
     this.stopCount += 1;
+    this.playing = false;
   }
 
   /** 模拟暂停。 */
   pause() {
     this.pauseCount += 1;
+    this.playing = false;
   }
 
   /** 记录一次性音效播放。 */
@@ -681,6 +700,9 @@ class MockDirector {
   /** 尚未完成的场景请求。 */
   _pendingLoads = [];
 
+  /** 当前注册的常驻根节点。 */
+  _persistRootNodes = new Set();
+
   /** 场景加载调用记录。 */
   loadCalls = [];
 
@@ -696,7 +718,38 @@ class MockDirector {
 
   /** 设置当前测试场景名。 */
   setSceneName(name) {
-    this._scene = name ? { name } : null;
+    const scene = name ? new Node(name) : null;
+    if (scene) {
+      for (const node of this._persistRootNodes) {
+        if (node.isValid) {
+          scene.addChild(node);
+        }
+      }
+    }
+    this._scene = scene;
+  }
+
+  /** 注册根层级常驻节点。 */
+  addPersistRootNode(node) {
+    if (!this._scene || node.parent !== this._scene) {
+      throw new Error("常驻节点必须先加入当前场景根层级。");
+    }
+    this._persistRootNodes.add(node);
+  }
+
+  /** 取消根节点常驻状态。 */
+  removePersistRootNode(node) {
+    this._persistRootNodes.delete(node);
+  }
+
+  /** 判断节点是否已注册为常驻节点。 */
+  isPersistRootNode(node) {
+    return this._persistRootNodes.has(node);
+  }
+
+  /** 返回当前有效常驻根节点，供框架测试检查所有权。 */
+  getPersistRootNodes() {
+    return [...this._persistRootNodes].filter((node) => node.isValid);
   }
 
   /** 让下一次场景加载等待测试主动完成。 */
@@ -747,6 +800,12 @@ class MockDirector {
 
   /** 清空 Director 状态。 */
   reset() {
+    for (const node of this._persistRootNodes) {
+      if (node.isValid) {
+        node.destroy();
+      }
+    }
+    this._persistRootNodes.clear();
     this.scheduler.reset();
     this._scene = null;
     this._loadBehaviors.length = 0;
@@ -768,6 +827,18 @@ export const assetManager = new MockAssetManager();
 
 /** 全局 director 模拟。 */
 export const director = new MockDirector();
+
+/** 测试专用 Game 生命周期事件名。 */
+export class Game {
+  /** 应用进入后台。 */
+  static EVENT_HIDE = "game-on-hide";
+
+  /** 应用回到前台。 */
+  static EVENT_SHOW = "game-on-show";
+}
+
+/** 全局应用生命周期事件目标模拟。 */
+export const game = new MockEventTarget();
 
 /** Cocos 系统接口模拟。 */
 export const sys = {
@@ -792,6 +863,7 @@ export const __mock = {
     resources.reset();
     assetManager.reset();
     director.reset();
+    game.reset();
     sys.localStorage.clear();
   },
 };

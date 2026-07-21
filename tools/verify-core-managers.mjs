@@ -105,6 +105,36 @@ function resetTestState() {
   Logger.setLevel(LogLevel.None);
 }
 
+/**
+ * 在指定模拟场景中初始化全局音频服务，并返回常驻节点上的两个独立音源。
+ *
+ * 测试通过公开的场景层级观察运行结果，不读取 AudioManager 私有字段，避免测试和实现细节
+ * 形成不必要的耦合。
+ */
+function initializeAudioService(sceneName = "Boot") {
+  cocos.director.setSceneName(sceneName);
+  AudioManager.init();
+  const persistRoots = cocos.director.getPersistRootNodes();
+  assert.equal(persistRoots.length, 1);
+  const audioRoot = persistRoots[0];
+  assert.equal(audioRoot.name, "AudioRoot");
+
+  const musicNode = audioRoot.children.find(
+    (child) => child.name === "MusicSource",
+  );
+  const effectNode = audioRoot.children.find(
+    (child) => child.name === "EffectSource",
+  );
+  assert.ok(musicNode);
+  assert.ok(effectNode);
+  const musicSource = musicNode.getComponent(cocos.AudioSource);
+  const effectSource = effectNode.getComponent(cocos.AudioSource);
+  assert.ok(musicSource);
+  assert.ok(effectSource);
+  assert.notEqual(musicSource, effectSource);
+  return { audioRoot, musicSource, effectSource };
+}
+
 /** 用于验证 UI 生命周期、打开参数和复用次数的测试面板。 */
 class RecordingPanel extends UIBase {
   /** 打开次数。 */
@@ -621,10 +651,35 @@ test("UIManager 销毁缺少组件或打开失败的不可信实例", async () =
   assert.equal(instances[0].node.isValid, false);
 });
 
+test("AudioManager 创建唯一常驻双音源并跨场景复用", () => {
+  const { audioRoot } = initializeAudioService();
+  assert.equal(audioRoot.parent, cocos.director.getScene());
+  assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_HIDE), 1);
+  assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_SHOW), 1);
+
+  AudioManager.init();
+  assert.deepEqual(cocos.director.getPersistRootNodes(), [audioRoot]);
+  assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_HIDE), 1);
+  assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_SHOW), 1);
+
+  cocos.director.setSceneName("Game");
+  assert.equal(audioRoot.isValid, true);
+  assert.equal(audioRoot.parent, cocos.director.getScene());
+  assert.equal(cocos.director.isPersistRootNode(audioRoot), true);
+
+  // 常驻标记被外部误删时，重新初始化必须销毁旧宿主并恢复唯一常驻节点。
+  cocos.director.removePersistRootNode(audioRoot);
+  AudioManager.init();
+  const [recreatedRoot] = cocos.director.getPersistRootNodes();
+  assert.ok(recreatedRoot);
+  assert.notEqual(recreatedRoot, audioRoot);
+  assert.equal(audioRoot.isValid, false);
+  assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_HIDE), 1);
+  assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_SHOW), 1);
+});
+
 test("AudioManager 切换音乐并在音效结束后释放资源", async () => {
-  const audioNode = new cocos.Node("AudioRoot");
-  const audioSource = audioNode.addComponent(new cocos.AudioSource());
-  AudioManager.setAudioSource(audioSource);
+  const { musicSource, effectSource } = initializeAudioService();
 
   const firstMusic = new cocos.AudioClip(10);
   const secondMusic = new cocos.AudioClip(12);
@@ -635,8 +690,8 @@ test("AudioManager 切换音乐并在音效结束后释放资源", async () => {
 
   await AudioManager.playMusic("audio/music-a", true, { volume: 0.6 });
   assert.equal(firstMusic.refCount, 1);
-  assert.equal(audioSource.clip, firstMusic);
-  assert.equal(audioSource.volume, 0.6);
+  assert.equal(musicSource.clip, firstMusic);
+  assert.equal(musicSource.volume, 0.6);
   await AudioManager.playMusic("audio/music-b");
   assert.equal(firstMusic.refCount, 0);
   assert.equal(secondMusic.refCount, 1);
@@ -644,19 +699,20 @@ test("AudioManager 切换音乐并在音效结束后释放资源", async () => {
 
   await AudioManager.playEffect("audio/click", { volume: 0.4 });
   assert.equal(effect.refCount, 1);
-  assert.deepEqual(audioSource.oneShotCalls, [{ clip: effect, volume: 0.4 }]);
+  assert.deepEqual(effectSource.oneShotCalls, [
+    { clip: effect, volume: 0.4 },
+  ]);
+  assert.deepEqual(musicSource.oneShotCalls, []);
   cocos.director.scheduler.runAllOnce();
   assert.equal(effect.refCount, 0);
 
   AudioManager.stopMusic();
   assert.equal(secondMusic.refCount, 0);
-  assert.equal(audioSource.clip, null);
+  assert.equal(musicSource.clip, null);
 });
 
 test("AudioManager 丢弃停止播放后的旧异步音乐结果", async () => {
-  const audioNode = new cocos.Node("AudioRoot");
-  const audioSource = audioNode.addComponent(new cocos.AudioSource());
-  AudioManager.setAudioSource(audioSource);
+  const { musicSource } = initializeAudioService();
   const music = new cocos.AudioClip(8);
   cocos.resources.register("audio/deferred", music);
   cocos.resources.deferNextLoad("audio/deferred");
@@ -667,8 +723,54 @@ test("AudioManager 丢弃停止播放后的旧异步音乐结果", async () => {
   cocos.resources.completeNextLoad("audio/deferred");
   await request;
   assert.equal(music.refCount, 0);
-  assert.equal(audioSource.playCount, 0);
+  assert.equal(musicSource.playCount, 0);
   assert.equal(AudioManager.getCurrentMusicPath(), "");
+});
+
+test("AudioManager 在前后台切换时只恢复仍有播放意图的音乐", async () => {
+  const { musicSource } = initializeAudioService();
+  const music = new cocos.AudioClip(8);
+  cocos.resources.register("audio/background", music);
+
+  cocos.game.emit(cocos.Game.EVENT_HIDE);
+  await AudioManager.playMusic("audio/background");
+  assert.equal(musicSource.clip, music);
+  assert.equal(musicSource.playCount, 0);
+
+  cocos.game.emit(cocos.Game.EVENT_SHOW);
+  assert.equal(musicSource.playCount, 1);
+  assert.equal(musicSource.playing, true);
+
+  cocos.game.emit(cocos.Game.EVENT_HIDE);
+  assert.equal(musicSource.pauseCount, 1);
+  assert.equal(musicSource.playing, false);
+  cocos.game.emit(cocos.Game.EVENT_SHOW);
+  assert.equal(musicSource.playCount, 2);
+
+  AudioManager.pauseMusic();
+  assert.equal(musicSource.pauseCount, 2);
+  cocos.game.emit(cocos.Game.EVENT_HIDE);
+  cocos.game.emit(cocos.Game.EVENT_SHOW);
+  assert.equal(musicSource.playCount, 2);
+
+  AudioManager.resumeMusic();
+  assert.equal(musicSource.playCount, 3);
+});
+
+test("AudioManager 丢弃切到后台后才完成加载的音效", async () => {
+  const { effectSource } = initializeAudioService();
+  const effect = new cocos.AudioClip(0.5);
+  cocos.resources.register("audio/deferred-effect", effect);
+  cocos.resources.deferNextLoad("audio/deferred-effect");
+
+  const request = AudioManager.playEffect("audio/deferred-effect");
+  await flushMicrotasks();
+  cocos.game.emit(cocos.Game.EVENT_HIDE);
+  cocos.resources.completeNextLoad("audio/deferred-effect");
+  await request;
+
+  assert.equal(effect.refCount, 0);
+  assert.deepEqual(effectSource.oneShotCalls, []);
 });
 
 test("PoolManager 预热、获取、回收和清空节点", () => {
@@ -691,6 +793,7 @@ test("PoolManager 预热、获取、回收和清空节点", () => {
 });
 
 test("App 初始化幂等并按顺序重置全局状态", async () => {
+  cocos.director.setSceneName("Boot");
   App.init();
   App.init();
   assert.equal(App.inited, true);
@@ -698,6 +801,10 @@ test("App 初始化幂等并按顺序重置全局状态", async () => {
   assert.equal(App.get("AudioManager"), AudioManager);
   assert.equal(App.get("UIManager"), UIManager);
   assert.equal(App.get("SceneManager"), SceneManager);
+  const [audioRoot] = cocos.director.getPersistRootNodes();
+  assert.ok(audioRoot);
+  assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_HIDE), 1);
+  assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_SHOW), 1);
 
   StorageManager.set("persistent", 7);
   let eventCount = 0;
@@ -719,6 +826,10 @@ test("App 初始化幂等并按顺序重置全局状态", async () => {
   assert.equal(handle.released, true);
   assert.equal(asset.refCount, 0);
   assert.equal(StorageManager.get("persistent", 0), 7);
+  assert.equal(audioRoot.isValid, false);
+  assert.equal(cocos.director.getPersistRootNodes().length, 0);
+  assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_HIDE), 0);
+  assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_SHOW), 0);
 });
 
 /** 顺序执行全部用例，失败时保留具名上下文并始终清理临时文件。 */

@@ -1,6 +1,5 @@
-import { _decorator, AudioSource, Node } from "cc";
+import { _decorator, Node } from "cc";
 import { AudioManager } from "../core/audio/AudioManager";
-import { StorageManager } from "../core/data/StorageManager";
 import { EventCenter } from "../core/event/EventCenter";
 import { SceneBase } from "../core/scene/SceneBase";
 import { SceneManager } from "../core/scene/SceneManager";
@@ -46,10 +45,6 @@ export class GameScene extends SceneBase {
     @property(Node)
     private uiRoot: Node | null = null;
 
-    /** 当前场景共用的音频组件，必须在 Game.scene 中显式绑定。 */
-    @property(AudioSource)
-    private audioSource: AudioSource | null = null;
-
     /** 当前打开游戏面板的请求编号，切关或离场后旧请求不得写回。 */
     private _panelRequestId = 0;
 
@@ -62,15 +57,13 @@ export class GameScene extends SceneBase {
     /** 是否正在返回大厅，防止按钮重复发起场景切换。 */
     private _sceneTransitioning = false;
 
-    /** 进入场景时准备服务并打开拼图面板。 */
+    /** 进入场景时注册界面并打开当前拼图关卡。 */
     protected onEnter(): void {
         super.onEnter();
         this.assertRequiredBindings({
             uiRoot: this.uiRoot,
-            audioSource: this.audioSource,
         });
         Logger.info("进入拼图游戏场景。");
-        this.prepareFrameworkServices();
         this.registerGamePanels();
         this.startLevel(PuzzleLevelSession.getCurrentLevel());
     }
@@ -397,13 +390,6 @@ export class GameScene extends SceneBase {
         } else if (panel.node.isValid) {
             panel.node.destroy();
         }
-    }
-
-    /** 准备当前场景使用的音频服务。 */
-    private prepareFrameworkServices(): void {
-        AudioManager.setAudioSource(this.audioSource!);
-        AudioManager.setMusicVolume(StorageManager.get("musicVolume", 0.8));
-        AudioManager.setEffectVolume(StorageManager.get("effectVolume", 1));
     }
 
     /** 清理控制器、UI 和音乐状态；重复调用也保持安全。 */

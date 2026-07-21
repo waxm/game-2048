@@ -55,9 +55,9 @@ function validateSerializedAsset(filePath) {
   validateNodeRelations(objects, relativePath);
 
   if (filePath.endsWith("Lobby.scene")) {
-    validateSceneBindings(objects, relativePath, false);
+    validateSceneBindings(objects, relativePath);
   } else if (filePath.endsWith("Game.scene")) {
-    validateSceneBindings(objects, relativePath, true);
+    validateSceneBindings(objects, relativePath);
   } else if (filePath.endsWith("UIHomePanel.prefab")) {
     validatePrefabBindings(objects, relativePath, {
       titleLabel: "cc.Label",
@@ -232,8 +232,8 @@ function validateComponentOwner(objects, component, componentId, relativePath) {
   }
 }
 
-/** 校验 Lobby/Game 场景脚本的必填 Inspector 引用。 */
-function validateSceneBindings(objects, relativePath, requireAudioSource) {
+/** 校验 Lobby/Game 场景脚本的 UIRoot 绑定和全局音频迁移结果。 */
+function validateSceneBindings(objects, relativePath) {
   const canvasId = objects.findIndex(
     (object) => object.__type__ === "cc.Node" && object._name === "Canvas",
   );
@@ -254,11 +254,14 @@ function validateSceneBindings(objects, relativePath, requireAudioSource) {
   if (uiRoot?.__type__ !== "cc.Node" || uiRoot._name !== "UIRoot") {
     throw new Error(`${relativePath} 的场景脚本没有正确绑定 UIRoot。`);
   }
-  if (
-    requireAudioSource &&
-    objects[script.audioSource?.__id__]?.__type__ !== "cc.AudioSource"
-  ) {
-    throw new Error(`${relativePath} 的 GameScene 没有正确绑定 AudioSource。`);
+  if (Object.hasOwn(script, "audioSource")) {
+    throw new Error(`${relativePath} 仍保留旧版场景级 audioSource 绑定。`);
+  }
+  const canvasAudioSource = (canvas._components ?? [])
+    .map((component) => objects[component.__id__])
+    .find((component) => component?.__type__ === "cc.AudioSource");
+  if (canvasAudioSource) {
+    throw new Error(`${relativePath} 的 Canvas 仍挂载旧版 AudioSource。`);
   }
 }
 

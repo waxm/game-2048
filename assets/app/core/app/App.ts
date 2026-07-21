@@ -43,6 +43,9 @@ export class App {
 
         StorageManager.init();
         AudioManager.init();
+        // 音频节点跨场景常驻，因此用户音量也必须在框架启动时统一恢复。
+        AudioManager.setMusicVolume(StorageManager.get("musicVolume", 0.8));
+        AudioManager.setEffectVolume(StorageManager.get("effectVolume", 1));
         UIManager.init();
         SceneManager.syncCurrentScene();
 
