@@ -940,8 +940,8 @@ export class UIGamePanel extends UIBase {
   /**
    * 松手时验证整个组合是否能够平移到目标格。
    *
-   * 取消触摸、目标越界、目标组覆盖不完整或置换后会改变连接组形状时，本轮都
-   * 完整复位；只有移动计划通过全部校验后才一次性提交格子占用。
+   * 取消触摸或源组合越界时完整复位；目标中的旧组合允许被回填链拆分，只有源组合
+   * 保持整体形状。移动计划通过边界和占用校验后，才一次性提交全部格子变化。
    */
   private onPieceDrop = (pieceId: number, canceled: boolean): void => {
     if (this._completed || this._failed) {
@@ -1003,8 +1003,8 @@ export class UIGamePanel extends UIBase {
   /**
    * 根据当前拖拽快照创建完整移动计划。
    *
-   * 规划器会处理重叠平移形成的移动链，并要求目标中的每个已连接组合都被完整
-   * 覆盖、使用统一位移回填，从而支持“三格换两格加一单格”等完整组合置换。
+   * 规划器会处理重叠平移形成的移动链。玩家拿起的组合始终整体平移，目标区域
+   * 被覆盖的拼图依次回填到腾出的格子，旧目标组合可在提交后重新拆分或连接。
    */
   private createDraggingMovePlan(
     anchorPieceId: number,
@@ -1091,10 +1091,6 @@ export class UIGamePanel extends UIBase {
       case PuzzleMoveFailureReason.TargetOutOfBounds:
       case PuzzleMoveFailureReason.InvalidAnchor:
         return "组合超出棋盘边界，已返回原位";
-      case PuzzleMoveFailureReason.IncompleteTargetGroup:
-        return "目标连接组没有被完整覆盖，已返回原位";
-      case PuzzleMoveFailureReason.TargetGroupDeformed:
-        return "目标连接组无法保持原形，已返回原位";
       default:
         return "拼图占用状态异常，本次拖拽已复位";
     }
@@ -1105,8 +1101,6 @@ export class UIGamePanel extends UIBase {
     switch (reason) {
       case PuzzleMoveFailureReason.InvalidAnchor:
       case PuzzleMoveFailureReason.TargetOutOfBounds:
-      case PuzzleMoveFailureReason.IncompleteTargetGroup:
-      case PuzzleMoveFailureReason.TargetGroupDeformed:
         return false;
       default:
         return true;

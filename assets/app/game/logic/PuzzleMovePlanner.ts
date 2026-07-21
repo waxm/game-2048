@@ -18,12 +18,6 @@ export enum PuzzleMoveFailureReason {
   /** 整个拖拽组平移后有拼图超出棋盘。 */
   TargetOutOfBounds = "target-out-of-bounds",
 
-  /** 目标中的已连接组合没有被拖拽区域完整覆盖。 */
-  IncompleteTargetGroup = "incomplete-target-group",
-
-  /** 目标连接组合回填后无法保持原有形状。 */
-  TargetGroupDeformed = "target-group-deformed",
-
   /** 计算出的移动步骤出现重复来源、重复目标或遗漏。 */
   MoveCollision = "move-collision",
 }
@@ -84,7 +78,7 @@ export interface PuzzleMovePlanRequest {
   /** 拖拽开始时，移动组内每块拼图所在的格子。 */
   readonly sourceCellByPieceId: ReadonlyMap<number, number>;
 
-  /** 当前每块拼图所属的真实组合对象。 */
+  /** 当前每块拼图所属的真实组合对象，用于验证源组合必须整体拖动。 */
   readonly groupByPieceId: ReadonlyMap<number, PuzzleMoveGroup>;
 
   /** 用户实际按住的拼图编号，用它计算整组位移。 */
@@ -99,7 +93,8 @@ export interface PuzzleMovePlanRequest {
  *
  * 本类不读写 Cocos 节点，只根据棋盘快照生成完整置换。拖拽组沿同一位移平移时，
  * 重叠区域会形成若干条移动链；每条链末端被覆盖的拼图回填到链首腾出的格子。
- * 这样三格组合平移一格时表现为 `[A A A X] -> [X A A A]`，不会依赖格子排序。
+ * 玩家拿起的源组合始终保持形状，目标中的旧组合允许被移动链拆分，提交后再根据
+ * 新棋盘重新计算连接关系。这样满格棋盘不会因为刚性目标组合互相阻挡而产生死局。
  */
 export class PuzzleMovePlanner {
   /** 根据当前占用、连接关系和目标锚点生成可原子提交的移动计划。 */
@@ -224,10 +219,6 @@ export class PuzzleMovePlanner {
     }
 
     const allMoves = [...movingSteps, ...displacedSteps];
-    const shapeReason = this.validateDisplacedGroups(request, displacedSteps);
-    if (shapeReason !== PuzzleMoveFailureReason.None) {
-      return this.fail(shapeReason, rowOffset, columnOffset);
-    }
     if (!this.hasCompleteBijection(allMoves)) {
       return this.fail(
         PuzzleMoveFailureReason.MoveCollision,
@@ -298,77 +289,6 @@ export class PuzzleMovePlanner {
         return PuzzleMoveFailureReason.InvalidMovingGroup;
       }
       sourceCells.add(sourceCellIndex);
-    }
-    return PuzzleMoveFailureReason.None;
-  }
-
-  /**
-   * 校验目标中的连接组合可以完整、刚性地回填。
-   *
-   * 完整覆盖防止只拿走组合的一部分；所有成员使用同一行列位移，保证横条、竖条和
-   * 不规则形状都不会在置换后被拉伸、翻转或拆散。
-   */
-  private static validateDisplacedGroups(
-    request: PuzzleMovePlanRequest,
-    displacedSteps: readonly PuzzleMoveStep[],
-  ): PuzzleMoveFailureReason {
-    const displacedPieceIds = new Set(
-      displacedSteps.map((step) => step.pieceId),
-    );
-    const stepByPieceId = new Map(
-      displacedSteps.map((step) => [step.pieceId, step]),
-    );
-    const checkedPieceIds = new Set<number>();
-
-    for (const step of displacedSteps) {
-      if (checkedPieceIds.has(step.pieceId)) {
-        continue;
-      }
-      const group = request.groupByPieceId.get(step.pieceId);
-      if (!group || !group.pieceIds.has(step.pieceId)) {
-        return PuzzleMoveFailureReason.InvalidOccupancy;
-      }
-      for (const groupPieceId of group.pieceIds) {
-        const memberGroup = request.groupByPieceId.get(groupPieceId);
-        if (
-          !memberGroup ||
-          !this.areSameMembers(memberGroup.pieceIds, group.pieceIds)
-        ) {
-          return PuzzleMoveFailureReason.InvalidOccupancy;
-        }
-        if (!displacedPieceIds.has(groupPieceId)) {
-          return PuzzleMoveFailureReason.IncompleteTargetGroup;
-        }
-      }
-
-      let expectedRowOffset: number | null = null;
-      let expectedColumnOffset: number | null = null;
-      for (const groupPieceId of group.pieceIds) {
-        const groupStep = stepByPieceId.get(groupPieceId);
-        if (!groupStep) {
-          return PuzzleMoveFailureReason.IncompleteTargetGroup;
-        }
-        const source = this.toCell(
-          groupStep.sourceCellIndex,
-          request.columns,
-        );
-        const target = this.toCell(
-          groupStep.targetCellIndex,
-          request.columns,
-        );
-        const memberRowOffset = target.row - source.row;
-        const memberColumnOffset = target.column - source.column;
-        if (expectedRowOffset === null) {
-          expectedRowOffset = memberRowOffset;
-          expectedColumnOffset = memberColumnOffset;
-        } else if (
-          expectedRowOffset !== memberRowOffset ||
-          expectedColumnOffset !== memberColumnOffset
-        ) {
-          return PuzzleMoveFailureReason.TargetGroupDeformed;
-        }
-        checkedPieceIds.add(groupPieceId);
-      }
     }
     return PuzzleMoveFailureReason.None;
   }

@@ -50,6 +50,9 @@ let sequentialSimulationCount = 0;
 /** 使用实际连接图执行的随机组合拖拽次数。 */
 let connectedGroupSimulationCount = 0;
 
+/** 已检查不存在规则死局的棋盘状态数量。 */
+let deadlockAuditCount = 0;
+
 /** 统计乱序棋盘中已经按原图方向正确相邻的边数量。 */
 function countCorrectAdjacentEdges(rows, columns, pieceIdsByCell) {
   let edgeCount = 0;
@@ -255,51 +258,104 @@ function createActualConnectedGroups(rows, columns, pieceIdsByCell) {
   return result;
 }
 
-/** 校验成功计划没有拆开或改变移动前已经存在的任何连接组形状。 */
-function validateExistingGroupPreservation(
-  columns,
-  groupByPieceId,
-  plan,
-) {
-  const stepByPieceId = new Map(plan.moves.map((move) => [move.pieceId, move]));
-  const checkedPieceIds = new Set();
-  for (const [pieceId, group] of groupByPieceId) {
-    if (checkedPieceIds.has(pieceId)) {
+/**
+ * 在当前真实组合状态中寻找一次非原地的合法移动。
+ *
+ * 每个源组合都必须整体参与规划；目标组合不参与合法性限制。若所有源组合的全部
+ * 落点都无效，说明当前棋盘已经产生规则死局，测试应立即失败并保留棋盘快照。
+ */
+function findFirstLegalMove(rows, columns, pieceIdsByCell, groupByPieceId) {
+  const checkedGroupIds = new Set();
+  for (const pieceId of pieceIdsByCell) {
+    const movingGroup = groupByPieceId.get(pieceId);
+    assert.ok(movingGroup, `拼图 ${pieceId} 缺少真实组合。`);
+    if (checkedGroupIds.has(movingGroup.id)) {
       continue;
     }
-    const movedSteps = [...group.pieceIds]
-      .map((groupPieceId) => stepByPieceId.get(groupPieceId))
-      .filter(Boolean);
-    if (movedSteps.length > 0) {
-      assert.equal(
-        movedSteps.length,
-        group.pieceIds.size,
-        "有效计划只移动了旧连接组的一部分。",
-      );
-      const firstStep = movedSteps[0];
-      const firstRowOffset =
-        Math.floor(firstStep.targetCellIndex / columns) -
-        Math.floor(firstStep.sourceCellIndex / columns);
-      const firstColumnOffset =
-        firstStep.targetCellIndex % columns -
-        (firstStep.sourceCellIndex % columns);
-      for (const step of movedSteps) {
-        assert.equal(
-          Math.floor(step.targetCellIndex / columns) -
-            Math.floor(step.sourceCellIndex / columns),
-          firstRowOffset,
-          "有效计划改变了旧连接组成员的行间距。",
-        );
-        assert.equal(
-          step.targetCellIndex % columns - (step.sourceCellIndex % columns),
-          firstColumnOffset,
-          "有效计划改变了旧连接组成员的列间距。",
-        );
+    checkedGroupIds.add(movingGroup.id);
+
+    const anchorPieceId = pieceId;
+    const sourceAnchorCellIndex = pieceIdsByCell.indexOf(anchorPieceId);
+    const sourceCellByPieceId = new Map(
+      [...movingGroup.pieceIds].map((movingPieceId) => [
+        movingPieceId,
+        pieceIdsByCell.indexOf(movingPieceId),
+      ]),
+    );
+    for (
+      let targetAnchorCellIndex = 0;
+      targetAnchorCellIndex < pieceIdsByCell.length;
+      targetAnchorCellIndex += 1
+    ) {
+      if (targetAnchorCellIndex === sourceAnchorCellIndex) {
+        continue;
       }
+      const plan = PuzzleMovePlanner.createPlan({
+        rows,
+        columns,
+        pieceIdsByCell,
+        movingPieceIds: movingGroup.pieceIds,
+        sourceCellByPieceId,
+        groupByPieceId,
+        anchorPieceId,
+        targetAnchorCellIndex,
+      });
+      if (plan.valid) {
+        return { plan, movingPieceIds: movingGroup.pieceIds };
+      }
+      assert.equal(
+        plan.reason,
+        PuzzleMoveFailureReason.TargetOutOfBounds,
+        "有效棋盘寻找可移动组合时出现了非边界失败。",
+      );
     }
-    for (const groupPieceId of group.pieceIds) {
-      checkedPieceIds.add(groupPieceId);
-    }
+  }
+  return null;
+}
+
+/** 依次生成数组的全部排列，用于穷举小棋盘的每一种可能状态。 */
+function visitPermutations(values, startIndex, visitor) {
+  if (startIndex === values.length) {
+    visitor(values);
+    return;
+  }
+  for (let index = startIndex; index < values.length; index += 1) {
+    [values[startIndex], values[index]] = [values[index], values[startIndex]];
+    visitPermutations(values, startIndex + 1, visitor);
+    [values[startIndex], values[index]] = [values[index], values[startIndex]];
+  }
+}
+
+/** 校验玩家拿起的源组合全部参与移动，并始终使用同一个刚性位移。 */
+function validateMovingGroupPreservation(columns, movingPieceIds, plan) {
+  const stepByPieceId = new Map(plan.moves.map((move) => [move.pieceId, move]));
+  const movedSteps = [...movingPieceIds].map((pieceId) =>
+    stepByPieceId.get(pieceId),
+  );
+  assert.ok(
+    movedSteps.every(Boolean),
+    "有效计划没有完整移动玩家拿起的源组合。",
+  );
+
+  const firstStep = movedSteps[0];
+  const firstRowOffset =
+    Math.floor(firstStep.targetCellIndex / columns) -
+    Math.floor(firstStep.sourceCellIndex / columns);
+  const firstColumnOffset =
+    firstStep.targetCellIndex % columns -
+    (firstStep.sourceCellIndex % columns);
+  for (const step of movedSteps) {
+    assert.equal(
+      Math.floor(step.targetCellIndex / columns) -
+        Math.floor(step.sourceCellIndex / columns),
+      firstRowOffset,
+      "有效计划改变了源组合成员的行间距。",
+    );
+    assert.equal(
+      step.targetCellIndex % columns - (step.sourceCellIndex % columns),
+      firstColumnOffset,
+      "有效计划改变了源组合成员的列间距。",
+    );
   }
 }
 
@@ -396,8 +452,8 @@ expectValid(
   },
   [0, 1, 2, 3, 4, 5],
 );
-expectFailure(
-  "只覆盖目标三格组中的两格",
+expectValid(
+  "两格源组合拆开目标三格组",
   {
     rows: 2,
     columns: 3,
@@ -406,12 +462,12 @@ expectFailure(
     targetConnectedGroups: [[3, 4, 5]],
     targetAnchorCellIndex: 3,
   },
-  PuzzleMoveFailureReason.IncompleteTargetGroup,
+  [3, 4, 2, 0, 1, 5],
 );
 
-// 完整覆盖仍必须保持目标组形状；不同长度移动链不能把竖条回填成斜线。
-expectFailure(
-  "完整覆盖但目标连接组会变形",
+// 目标旧组合只负责让位，允许被不同长度的移动链拆开并在落点后重新计算连接。
+expectValid(
+  "不同链长允许拆开目标连接组",
   {
     rows: 2,
     columns: 4,
@@ -420,7 +476,31 @@ expectFailure(
     targetConnectedGroups: [[3, 4]],
     targetAnchorCellIndex: 1,
   },
-  PuzzleMoveFailureReason.TargetGroupDeformed,
+  [3, 0, 1, 5, 6, 4, 2, 7],
+);
+expectValid(
+  "纵向源组合拆开横向目标组",
+  {
+    rows: 3,
+    columns: 2,
+    pieceIdsByCell: [0, 1, 2, 3, 4, 5],
+    movingPieceIds: [0, 2],
+    targetConnectedGroups: [[4, 5]],
+    targetAnchorCellIndex: 2,
+  },
+  [4, 1, 0, 3, 2, 5],
+);
+expectValid(
+  "单块源组合拆开 T 形目标组",
+  {
+    rows: 3,
+    columns: 3,
+    pieceIdsByCell: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    movingPieceIds: [8],
+    targetConnectedGroups: [[0, 1, 2, 4]],
+    targetAnchorCellIndex: 1,
+  },
+  [0, 8, 2, 3, 4, 5, 6, 7, 1],
 );
 expectValid(
   "相同链长下目标连接组保持形状",
@@ -562,6 +642,38 @@ expectValid("L 形组合对角线平移", {
   targetAnchorCellIndex: 10,
 });
 
+// 穷举 2×3 的 720 种排列：除完整成图外，每一种状态都必须至少存在一次合法移动。
+visitPermutations([0, 1, 2, 3, 4, 5], 0, (pieceIdsByCell) => {
+  const groupByPieceId = createActualConnectedGroups(2, 3, pieceIdsByCell);
+  const firstGroup = groupByPieceId.get(pieceIdsByCell[0]);
+  assert.ok(firstGroup, "2×3 死局检查缺少首块组合。");
+  if (firstGroup.pieceIds.size === pieceIdsByCell.length) {
+    assert.deepEqual(
+      pieceIdsByCell,
+      [0, 1, 2, 3, 4, 5],
+      "全棋盘单一连接组必须就是完成状态。",
+    );
+  } else {
+    const legalMove = findFirstLegalMove(
+      2,
+      3,
+      pieceIdsByCell,
+      groupByPieceId,
+    );
+    assert.ok(
+      legalMove,
+      `2×3 出现规则死局：${pieceIdsByCell.join(",")}`,
+    );
+    applyAndValidatePlan(pieceIdsByCell, legalMove.plan);
+    validateMovingGroupPreservation(
+      3,
+      legalMove.movingPieceIds,
+      legalMove.plan,
+    );
+  }
+  deadlockAuditCount += 1;
+});
+
 /**
  * 系统遍历 9×9 上多种矩形连接组与全部锚点落格。
  *
@@ -660,7 +772,8 @@ function createShuffledBoard(pieceCount) {
  * 使用实际连接图执行随机组合拖拽。
  *
  * 随机棋盘会自然产生单块、横条、竖条和不规则小组；9×9 与 10×10 同时覆盖，
- * 用来确认关卡规模增长后仍不会拆组、变形、重复占格或丢失拼图。
+ * 用来确认关卡规模增长后源组合始终保持形状，同时目标组合可以让位且棋盘不会
+ * 重复占格或丢失拼图。
  */
 for (const [rows, columns, simulationCount] of [
   [9, 9, 3000],
@@ -677,6 +790,22 @@ for (const [rows, columns, simulationCount] of [
       columns,
       pieceIdsByCell,
     );
+    const firstGroup = groupByPieceId.get(pieceIdsByCell[0]);
+    assert.ok(firstGroup, `${rows}×${columns} 随机棋盘缺少首块组合。`);
+    if (firstGroup.pieceIds.size !== pieceIdsByCell.length) {
+      const legalMove = findFirstLegalMove(
+        rows,
+        columns,
+        pieceIdsByCell,
+        groupByPieceId,
+      );
+      assert.ok(
+        legalMove,
+        `${rows}×${columns} 随机真实组合棋盘出现规则死局。`,
+      );
+    }
+    deadlockAuditCount += 1;
+
     const anchorPieceId = pieceIdsByCell[nextRandomIndex(pieceIdsByCell.length)];
     const movingGroup = groupByPieceId.get(anchorPieceId);
     const movingPieceIds = movingGroup.pieceIds;
@@ -698,13 +827,14 @@ for (const [rows, columns, simulationCount] of [
     });
     if (plan.valid) {
       applyAndValidatePlan(pieceIdsByCell, plan);
-      validateExistingGroupPreservation(
-        columns,
-        groupByPieceId,
-        plan,
-      );
+      validateMovingGroupPreservation(columns, movingPieceIds, plan);
     } else {
       assert.equal(plan.moves.length, 0, "失败计划不应暴露局部移动步骤。");
+      assert.equal(
+        plan.reason,
+        PuzzleMoveFailureReason.TargetOutOfBounds,
+        "有效棋盘上的随机拖拽只能因源组合越界失败。",
+      );
     }
     connectedGroupSimulationCount += 1;
   }
@@ -731,5 +861,6 @@ console.log(
   `拼图拖拽模拟通过：${namedCaseCount} 个规则用例，` +
     `${boundarySimulationCount} 次 9×9 边界落点，` +
     `${connectedGroupSimulationCount} 次真实连接组压力拖拽，` +
+    `${deadlockAuditCount} 个棋盘死局检查，` +
     `${sequentialSimulationCount} 次连续拖拽。`,
 );

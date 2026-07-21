@@ -149,6 +149,38 @@ assert.deepEqual(
 );
 assert.equal(secondMerge.largestConnectedGroup?.size, 5, "最大组合数量不正确。");
 
+// 目标组合被移动链打散后，管理器必须创建新的连通分量并替换全部反向索引。
+const groupBeforeSplit = manager.getGroupByPieceId(0);
+const splitResult = manager.rebuild(
+  [0, 1, 2, 3, 4, 5],
+  [
+    { firstPieceId: 0, secondPieceId: 1 },
+    { firstPieceId: 3, secondPieceId: 4 },
+  ],
+);
+assert.equal(splitResult.groups.length, 4, "旧组合拆分后的组合数量不正确。");
+assert.equal(splitResult.expandedGroups.length, 0, "组合拆分不应误报连接扩展。");
+assert.deepEqual(
+  [...manager.getGroupByPieceId(0).pieceIds],
+  [0, 1],
+  "拆分后的第一段成员不正确。",
+);
+assert.deepEqual(
+  [...manager.getGroupByPieceId(3).pieceIds],
+  [3, 4],
+  "拆分后的第二段成员不正确。",
+);
+assert.notEqual(
+  manager.getGroupByPieceId(0),
+  groupBeforeSplit,
+  "组合拆分后错误复用了旧组合对象。",
+);
+assert.equal(
+  splitResult.largestConnectedGroup?.id,
+  0,
+  "同样大小的拆分组合应稳定选择编号较小者。",
+);
+
 // 非法连接必须在正式索引替换前抛错，原组合状态保持完整。
 const stableGroup = manager.getGroupByPieceId(0);
 assert.throws(
@@ -165,4 +197,4 @@ assert.equal(
   "非法重建改变了原组合状态。",
 );
 
-console.log("拼图组合模型与外轮廓验证通过：6 类轮廓、5 类组合状态。");
+console.log("拼图组合模型与外轮廓验证通过：6 类轮廓、6 类组合状态。");
