@@ -39,7 +39,7 @@ const internalAssetUuids = new Set([
 ]);
 
 /** 当前校验器支持的资源专项检查。 */
-const supportedChecks = new Set(["noCanvasAudio", "gamePanelHierarchy"]);
+const supportedChecks = new Set(["noCanvasAudio"]);
 
 /** 扫描并验证项目正式使用的 Cocos 序列化资源。 */
 function main() {
@@ -64,7 +64,7 @@ function main() {
   }
 
   console.log(
-    `已按清单校验 ${manifest.length} 个正式 Scene/Prefab、${scriptCount} 个脚本类型和 ${bindingCount} 个必填绑定。`,
+    `已按清单校验 ${manifest.length} 个正式 Cocos 资源、${scriptCount} 个脚本类型和 ${bindingCount} 个必填绑定。`,
   );
 }
 
@@ -325,8 +325,6 @@ function validateSerializedAsset(
   for (const checkName of checks) {
     if (checkName === "noCanvasAudio") {
       validateNoCanvasAudio(objects, assetPath, scriptResults);
-    } else if (checkName === "gamePanelHierarchy") {
-      validateGamePanelHierarchy(objects, assetPath);
     }
   }
 
@@ -571,36 +569,6 @@ function validateNoCanvasAudio(objects, assetPath, scriptResults) {
         `${assetPath} 的 ${result.className} 仍保留旧版 audioSource 绑定。`,
       );
     }
-  }
-}
-
-/** 校验组合边框层和活动拼图容器位于确定的父节点下。 */
-function validateGamePanelHierarchy(objects, assetPath) {
-  const getUniqueNodeId = (name) => {
-    const ids = objects
-      .map((object, index) => ({ object, index }))
-      .filter(
-        ({ object }) => object.__type__ === "cc.Node" && object._name === name,
-      )
-      .map(({ index }) => index);
-    if (ids.length !== 1) {
-      throw new Error(`${assetPath} 必须有且只有一个 ${name} 节点。`);
-    }
-    return ids[0];
-  };
-
-  const rootId = getUniqueNodeId("UIGamePanel");
-  const restingBorderId = getUniqueNodeId("RestingGroupBorderLayer");
-  const activeRootId = getUniqueNodeId("ActiveGroupRoot");
-  const activePieceContainerId = getUniqueNodeId("ActivePieceContainer");
-  const activeBorderId = getUniqueNodeId("ActiveGroupBorderLayer");
-  if (
-    objects[restingBorderId]._parent?.__id__ !== rootId ||
-    objects[activeRootId]._parent?.__id__ !== rootId ||
-    objects[activePieceContainerId]._parent?.__id__ !== activeRootId ||
-    objects[activeBorderId]._parent?.__id__ !== activeRootId
-  ) {
-    throw new Error(`${assetPath} 的组合边框或活动组合节点层级不正确。`);
   }
 }
 

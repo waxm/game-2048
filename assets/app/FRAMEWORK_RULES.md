@@ -1,104 +1,66 @@
-# Work AI 工程说明
+# Work AI 框架说明
 
-## 项目范围
+## 框架目标
 
-- 引擎版本：Cocos Creator 3.8.4。
-- 设计尺寸：竖屏 `640 x 1136`。
-- 当前正式内容只包含可复用框架和拼图游戏业务。
-- 一次性试验、外部设计转换产物和已经停用的玩法不得留在正式目录中。
+这个分支只维护可复用的小型 2D 游戏框架，不包含任何具体玩法、业务 UI、关卡数据或美术资源。新游戏从 `dev` 创建独立分支后再添加业务内容。
 
-## 代码结构
+## 当前结构
 
 ```text
-assets/app/
-  core/               # 与具体玩法无关的可复用框架
-  game/               # 拼图配置、状态、控制器和纯逻辑
-  scenes/             # Boot、Lobby、Game 场景脚本
-  ui/
-    common/           # 通用错误恢复面板
-    home/             # 大厅面板
-    game/             # 拼图主面板、拼图块和边框渲染
-    popup/            # 通关与失败弹窗
+assets/app/core/
+  app/App.ts                 # 初始化、服务注册和全局重置
+  audio/AudioManager.ts      # 音乐、音效和前后台生命周期
+  data/StorageManager.ts     # 本地存档
+  event/EventCenter.ts       # 全局事件与 owner 清理
+  pool/PoolManager.ts        # 节点池和 Prefab 资源所有权
+  resource/ResManager.ts     # 资源句柄、引用计数和 Bundle 管理
+  scene/SceneBase.ts         # 场景进入、回滚和退出清理
+  scene/SceneManager.ts      # 场景切换状态与并发保护
+  timer/TimerManager.ts      # 延迟、循环和 owner 清理
+  ui/UIBase.ts               # 面板生命周期和绑定校验
+  ui/UIManager.ts            # UI 加载、缓存和并发请求管理
+  utils/Logger.ts            # 分级日志
 
-assets/scene/          # Boot、Lobby、Game 场景资源
-assets/resources/
-  prefabs/             # 按 common、home、game、popup 分类的正式 Prefab
-  textures/game/levels # 按关卡编号存放的拼图完整原图
+assets/app/scenes/BootScene.ts # 最小框架启动入口
+assets/scene/Boot.scene         # 唯一框架场景
+tools/                          # 核心测试和 Cocos 资源校验
 ```
-
-## 核心框架
-
-```text
-App                    # 框架初始化、服务注册和全局重置
-Logger                 # 分级日志
-EventCenter            # 全局事件通信和按 owner 清理
-StorageManager         # 本地存档
-ResManager             # 资源句柄、引用计数和 Bundle 管理
-UIBase / UIManager     # UI 生命周期、缓存和并发打开管理
-SceneBase / SceneManager # 场景生命周期、切换结果和失败回滚
-AudioManager           # 跨场景音乐与音效
-PoolManager            # 带资源所有权的节点对象池
-TimerManager           # 延迟、循环计时和按 owner 清理
-```
-
-资源、事件、计时器、Tween、按钮回调和节点监听都必须有明确所有者，并在对应生命周期结束时释放。异步操作返回后必须重新确认请求和宿主对象仍然有效。
 
 ## 启动流程
 
 ```text
-BootScene
+Boot.scene
+  -> BootScene.onEnter()
   -> App.init()
-  -> 加载 Lobby.scene
-
-LobbyScene
-  -> 打开 UIHomePanel
-  -> 读取已解锁关卡
-  -> 选择关卡并加载 Game.scene
-
-GameScene
-  -> 打开 UIGamePanel
-  -> 创建 PuzzleGameController
-  -> 运行关卡、结算、重玩、切关或返回大厅
+  -> 初始化 Storage、Audio、UI 和 Scene 管理器
+  -> 等待具体游戏分支接入首个业务场景
 ```
 
-场景或 UI 加载失败时必须显示明确的重试和返回入口。Game 面板成功打开后才能创建控制器，避免初始状态事件早于 UI 监听。
+框架不预设 `Lobby`、`Game` 或其他业务场景，也不自动加载业务 Prefab。
 
-## 拼图规则
+## 所有权规则
 
-- 关卡只保存完整原图，运行时根据 `rows × columns` 切分 SpriteFrame。
-- 棋盘为无空隙规则网格，拼图落点必须位于有效格子。
-- 正确相邻的拼图形成软组合，拖拽时整组一起移动。
-- 源组合保持形状，目标位置已有组合允许按移动结果拆分。
-- 移动规划必须先生成完整双射，再一次性提交棋盘占用状态。
-- 每次有效移动后重新计算组合、最大连接数量和组合外围边框。
-- 全部拼图进入同一组合时完成关卡；限时关卡耗尽时间后失败。
+- `EventCenter` 和 `TimerManager` 使用 owner 清理。
+- `ResManager` 通过资源句柄负责 `addRef/decRef`。
+- `UIManager` 将动态 Prefab 句柄绑定到实例节点销毁。
+- `PoolManager` 在池与全部节点结束后释放 Prefab 句柄。
+- `AudioManager` 独立持有音乐和音效资源句柄。
+- `SceneBase` 在进入失败或退出时统一清理事件、计时器、Tween、调度和跟踪资源。
 
-## 关卡资源
+## 新游戏接入
 
-每关使用固定目录和文件名：
+1. 从 `dev` 创建游戏分支。
+2. 在 `assets/app/game` 添加业务状态和逻辑。
+3. 在 `assets/app/ui/<module>` 添加 UI 脚本，并建立对应的 `prefabs/<module>`、`textures/<module>`。
+4. 在 `assets/app/scenes` 和 `assets/scene` 添加业务场景。
+5. 将新增正式 Scene 和 Prefab 登记到 `tools/cocos-asset-manifest.mjs`。
+6. 为玩法规则增加独立自动化测试，并接入该分支的 `npm run verify`。
 
-```text
-textures/game/levels/level_001/level_001_source.png
-textures/game/levels/level_002/level_002_source.png
-```
-
-玩法参数维护在 `tools/config/puzzle-levels.json`。运行 `npm run generate:levels` 根据真实资源目录生成关卡目录；运行时加载路径必须以 `/spriteFrame` 结尾，关卡 SpriteFrame 必须关闭动态合图。
-
-## Prefab 约束
-
-- 正式 Prefab 必须按模块存放；当前只使用 `prefabs/common`、`prefabs/home`、`prefabs/game` 和 `prefabs/popup`。
-- UI 节点结构只来源于 Prefab，业务脚本不得运行时补建或递归查找节点。
-- 脚本使用的节点和组件必须通过 `@property` 在 Inspector 显式绑定。
-- 新增正式 Scene 或 Prefab 时必须登记到 `tools/cocos-asset-manifest.mjs`。
-
-## 验证入口
+## 验证命令
 
 ```text
-npm run typecheck              # TypeScript 编译检查
-npm run verify:core            # 核心框架验证
-npm run validate:levels        # 关卡配置与图片检查
-npm run verify:puzzle-groups   # 拼图组合和轮廓验证
-npm run verify:puzzle-drag     # 拖拽规则与死局模拟
-npm run validate:cocos         # Scene、Prefab、UUID 和绑定校验
-npm run verify                 # 执行全部验证
+npm run typecheck        # TypeScript 编译检查
+npm run verify:core      # 28 个核心框架用例
+npm run validate:cocos   # Scene、脚本类 ID、UUID 和绑定校验
+npm run verify           # 执行全部框架验证
 ```

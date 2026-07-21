@@ -1,11 +1,5 @@
 # Scenes 场景层
 
-场景脚本放在这里，场景资源放在 `assets/scene`。
+纯框架只保留 `BootScene.ts`，负责调用 `App.init()`。它不会预设或加载任何具体游戏场景。
 
-```text
-BootScene.ts       # 初始化框架并进入大厅
-LobbyScene.ts      # 打开大厅、选择关卡并进入游戏
-GameScene.ts       # 创建关卡、处理结算、重玩、切关和返回大厅
-```
-
-项目当前包含 `Boot.scene`、`Lobby.scene` 和 `Game.scene`。场景脚本需要的节点必须在 Scene 中显式绑定；加载失败由通用错误面板提供重试或返回入口。
+游戏分支新增的场景脚本继续放在这里，对应 `.scene` 文件放在 `assets/scene`。场景脚本需要的节点必须在 Inspector 显式绑定，并通过 `SceneBase` 管理进入、退出和失败回滚。
