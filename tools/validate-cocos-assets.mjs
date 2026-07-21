@@ -3,27 +3,224 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { cocosAssetManifest } from "./cocos-asset-manifest.mjs";
+
 /** 项目根目录。 */
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
-/** 需要验证的正式 Scene 目录。 */
+/** 需要纳入清单覆盖检查的正式 Scene 目录。 */
 const sceneRoot = path.join(projectRoot, "assets/scene");
 
-/** 需要验证的正式 Prefab 目录；蓝湖试验模块不纳入框架验收。 */
+/** 需要纳入清单覆盖检查的正式 Prefab 目录。 */
 const prefabRoot = path.join(projectRoot, "assets/resources/prefabs");
+
+/** Creator 编辑器编译脚本所在目录，用于核对实际类 ID。 */
+const creatorChunkRoot = path.join(
+  projectRoot,
+  "temp/programming/packer-driver/targets/editor/chunks",
+);
+
+/** Cocos 压缩 UUID 使用的 Base64 字符表。 */
+const compressedUuidAlphabet =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/** 项目资源 UUID 的格式。 */
+const standardUuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 项目资源或其子资源 UUID 的格式。 */
+const serializedUuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:@[A-Za-z0-9]+)?$/i;
+
+/** Creator 内置资源不位于项目 assets 目录，必须显式登记后才能通过校验。 */
+const internalAssetUuids = new Set([
+  "d032ac98-05e1-4090-88bb-eb640dcb5fc1@b47c0",
+  "6f01cf7f-81bf-4a7e-bd5d-0afc19696480@b47c0",
+]);
+
+/** 当前校验器支持的资源专项检查。 */
+const supportedChecks = new Set(["noCanvasAudio", "gamePanelHierarchy"]);
 
 /** 扫描并验证项目正式使用的 Cocos 序列化资源。 */
 function main() {
-  const files = [
+  const manifest = validateManifest(cocosAssetManifest);
+  validateManifestCoverage(manifest);
+
+  const localUuidIndex = buildLocalUuidIndex();
+  const compiledScriptRegistry = buildCompiledScriptRegistry();
+  const scriptInfoCache = new Map();
+  let scriptCount = 0;
+  let bindingCount = 0;
+
+  for (const assetConfig of manifest) {
+    const result = validateSerializedAsset(
+      assetConfig,
+      localUuidIndex,
+      compiledScriptRegistry,
+      scriptInfoCache,
+    );
+    scriptCount += result.scriptCount;
+    bindingCount += result.bindingCount;
+  }
+
+  console.log(
+    `已按清单校验 ${manifest.length} 个正式 Scene/Prefab、${scriptCount} 个脚本类型和 ${bindingCount} 个必填绑定。`,
+  );
+}
+
+/** 校验清单结构，并返回按资源路径排序后的副本。 */
+function validateManifest(manifest) {
+  if (!Array.isArray(manifest) || manifest.length === 0) {
+    throw new Error("Cocos 资源校验清单不能为空。");
+  }
+
+  const assetPaths = new Set();
+  const scriptSources = new Map();
+  for (const assetConfig of manifest) {
+    const { assetPath, kind, scripts, checks = [] } = assetConfig ?? {};
+    validateProjectRelativePath(assetPath, "清单资源路径");
+    if (kind !== "scene" && kind !== "prefab") {
+      throw new Error(`${assetPath} 的资源类型必须是 scene 或 prefab。`);
+    }
+    if (!assetPath.endsWith(`.${kind}`)) {
+      throw new Error(`${assetPath} 的后缀与清单类型 ${kind} 不一致。`);
+    }
+    if (assetPaths.has(assetPath)) {
+      throw new Error(`Cocos 资源清单重复登记了 ${assetPath}。`);
+    }
+    assetPaths.add(assetPath);
+
+    if (!Array.isArray(scripts) || scripts.length === 0) {
+      throw new Error(`${assetPath} 至少需要登记一个业务脚本。`);
+    }
+    const assetScriptClasses = new Set();
+    for (const scriptConfig of scripts) {
+      validateScriptConfig(assetPath, scriptConfig);
+      if (assetScriptClasses.has(scriptConfig.className)) {
+        throw new Error(
+          `${assetPath} 重复登记了业务脚本 ${scriptConfig.className}。`,
+        );
+      }
+      assetScriptClasses.add(scriptConfig.className);
+
+      const registeredSource = scriptSources.get(scriptConfig.className);
+      if (registeredSource && registeredSource !== scriptConfig.sourcePath) {
+        throw new Error(
+          `业务脚本 ${scriptConfig.className} 同时指向 ${registeredSource} 和 ${scriptConfig.sourcePath}。`,
+        );
+      }
+      scriptSources.set(scriptConfig.className, scriptConfig.sourcePath);
+    }
+
+    if (!Array.isArray(checks)) {
+      throw new Error(`${assetPath} 的 checks 必须是数组。`);
+    }
+    for (const checkName of checks) {
+      if (!supportedChecks.has(checkName)) {
+        throw new Error(`${assetPath} 使用了未知专项检查 ${checkName}。`);
+      }
+    }
+  }
+
+  return [...manifest].sort((left, right) =>
+    left.assetPath.localeCompare(right.assetPath),
+  );
+}
+
+/** 校验单个业务脚本的清单配置。 */
+function validateScriptConfig(assetPath, scriptConfig) {
+  const {
+    className,
+    sourcePath,
+    hostNodeName,
+    objectBindings = {},
+    assetBindings = {},
+  } = scriptConfig ?? {};
+  if (typeof className !== "string" || className.length === 0) {
+    throw new Error(`${assetPath} 存在未填写 className 的脚本配置。`);
+  }
+  validateProjectRelativePath(sourcePath, `${className} 源码路径`);
+  if (!sourcePath.endsWith(".ts")) {
+    throw new Error(`${className} 的源码路径必须指向 TypeScript 文件。`);
+  }
+  if (typeof hostNodeName !== "string" || hostNodeName.length === 0) {
+    throw new Error(`${className} 必须登记脚本宿主节点名称。`);
+  }
+
+  validateBindingMap(assetPath, className, objectBindings, false);
+  validateBindingMap(assetPath, className, assetBindings, true);
+}
+
+/** 校验 Inspector 绑定清单的字段结构。 */
+function validateBindingMap(assetPath, className, bindings, isAssetBinding) {
+  if (!bindings || typeof bindings !== "object" || Array.isArray(bindings)) {
+    throw new Error(`${assetPath} 的 ${className} 绑定配置必须是对象。`);
+  }
+
+  for (const [field, binding] of Object.entries(bindings)) {
+    if (!field || !binding || typeof binding !== "object") {
+      throw new Error(`${assetPath} 的 ${className}.${field} 绑定配置无效。`);
+    }
+    if (typeof binding.type !== "string" || binding.type.length === 0) {
+      throw new Error(`${assetPath} 的 ${className}.${field} 缺少组件类型。`);
+    }
+    if (isAssetBinding) {
+      validateProjectRelativePath(
+        binding.assetMetaPath,
+        `${className}.${field} 资源 Meta 路径`,
+      );
+      if (!binding.assetMetaPath.endsWith(".meta")) {
+        throw new Error(`${className}.${field} 必须指向资源的 .meta 文件。`);
+      }
+    } else if (
+      typeof binding.nodeName !== "string" ||
+      binding.nodeName.length === 0
+    ) {
+      throw new Error(`${className}.${field} 必须登记目标节点名称。`);
+    }
+  }
+}
+
+/** 防止清单路径逃逸项目目录，也避免同一路径出现多种写法。 */
+function validateProjectRelativePath(relativePath, description) {
+  if (typeof relativePath !== "string" || relativePath.length === 0) {
+    throw new Error(`${description}不能为空。`);
+  }
+  const normalizedPath = path.posix.normalize(relativePath.replaceAll("\\", "/"));
+  if (
+    path.isAbsolute(relativePath) ||
+    normalizedPath !== relativePath ||
+    normalizedPath === ".." ||
+    normalizedPath.startsWith("../")
+  ) {
+    throw new Error(`${description}必须是规范的项目相对路径：${relativePath}`);
+  }
+}
+
+/** 确保正式资源目录与清单完全一致，禁止遗漏校验或登记不存在的资源。 */
+function validateManifestCoverage(manifest) {
+  const actualPaths = [
     ...collectFiles(sceneRoot, ".scene"),
     ...collectFiles(prefabRoot, ".prefab").filter(
       (filePath) => !filePath.includes(`${path.sep}lanhu${path.sep}`),
     ),
-  ];
-  for (const filePath of files) {
-    validateSerializedAsset(filePath);
+  ].map(toProjectPath);
+  const manifestPaths = manifest.map((item) => item.assetPath);
+  const actualSet = new Set(actualPaths);
+  const manifestSet = new Set(manifestPaths);
+  const unregistered = actualPaths.filter((item) => !manifestSet.has(item));
+  const missing = manifestPaths.filter((item) => !actualSet.has(item));
+
+  if (unregistered.length > 0 || missing.length > 0) {
+    const details = [];
+    if (unregistered.length > 0) {
+      details.push(`未登记：${unregistered.join("、")}`);
+    }
+    if (missing.length > 0) {
+      details.push(`文件不存在：${missing.join("、")}`);
+    }
+    throw new Error(`正式 Cocos 资源与校验清单不一致；${details.join("；")}`);
   }
-  console.log(`已校验 ${files.length} 个正式 Scene/Prefab 序列化资源。`);
 }
 
 /** 递归收集指定后缀的文件。 */
@@ -43,101 +240,344 @@ function collectFiles(root, extension) {
   return files.sort();
 }
 
-/** 校验单个 Scene 或 Prefab 的引用范围与节点组件关系。 */
-function validateSerializedAsset(filePath) {
-  const relativePath = path.relative(projectRoot, filePath);
-  const objects = JSON.parse(fs.readFileSync(filePath, "utf8"));
-  if (!Array.isArray(objects) || objects.length === 0) {
-    throw new Error(`${relativePath} 不是有效的 Cocos 序列化对象数组。`);
+/** 将绝对路径转换为使用正斜杠的项目相对路径。 */
+function toProjectPath(filePath) {
+  return path.relative(projectRoot, filePath).split(path.sep).join("/");
+}
+
+/** 建立 assets 内全部主资源和子资源的 UUID 索引。 */
+function buildLocalUuidIndex() {
+  const uuidIndex = new Map();
+  const metaFiles = collectFiles(path.join(projectRoot, "assets"), ".meta");
+  for (const metaFile of metaFiles) {
+    const relativePath = toProjectPath(metaFile);
+    const meta = readJson(metaFile, relativePath);
+    visitObject(meta, (value, key) => {
+      if (key !== "uuid") {
+        return;
+      }
+      if (typeof value !== "string" || !serializedUuidPattern.test(value)) {
+        throw new Error(`${relativePath} 包含格式无效的 UUID：${String(value)}`);
+      }
+      const registeredPath = uuidIndex.get(value);
+      if (registeredPath && registeredPath !== relativePath) {
+        throw new Error(
+          `资源 UUID ${value} 同时出现在 ${registeredPath} 和 ${relativePath}。`,
+        );
+      }
+      uuidIndex.set(value, relativePath);
+    });
+  }
+  return uuidIndex;
+}
+
+/** 扫描 Creator 实际编译结果，建立 ccclass 到脚本类 ID 的对应关系。 */
+function buildCompiledScriptRegistry() {
+  if (!fs.existsSync(creatorChunkRoot)) {
+    throw new Error(
+      "缺少 Creator 编辑器编译目录，请先用 Cocos Creator 3.8.4 打开项目并完成脚本导入。",
+    );
   }
 
-  validateReferenceRange(objects, relativePath);
-  validateNodeRelations(objects, relativePath);
+  const registry = new Map();
+  const pushPattern =
+    /_RF\.push\(\{\},\s*["']([^"']+)["'],\s*["']([^"']+)["']/g;
+  for (const chunkFile of collectFiles(creatorChunkRoot, ".js")) {
+    const content = fs.readFileSync(chunkFile, "utf8");
+    for (const match of content.matchAll(pushPattern)) {
+      const [, typeId, className] = match;
+      const typeIds = registry.get(className) ?? new Set();
+      typeIds.add(typeId);
+      registry.set(className, typeIds);
+    }
+  }
+  return registry;
+}
 
-  if (filePath.endsWith("Lobby.scene")) {
-    validateSceneBindings(objects, relativePath);
-  } else if (filePath.endsWith("Game.scene")) {
-    validateSceneBindings(objects, relativePath);
-  } else if (filePath.endsWith("UIHomePanel.prefab")) {
-    validatePrefabBindings(objects, relativePath, {
-      titleLabel: "cc.Label",
-      startButton: "cc.Button",
-      startButtonLabel: "cc.Label",
-      tipLabel: "cc.Label",
-    });
-  } else if (filePath.endsWith("PuzzlePiece.prefab")) {
-    validatePrefabBindings(objects, relativePath, {
-      pieceTransform: "cc.UITransform",
-      imageSprite: "cc.Sprite",
-      numberLabel: "cc.Label",
-    });
-  } else if (filePath.endsWith("UIGamePanel.prefab")) {
-    validatePrefabBindings(objects, relativePath, {
-      titleLabel: "cc.Label",
-      progressLabel: "cc.Label",
-      feedbackLabel: "cc.Label",
-      puzzleContainer: "cc.Node",
-      puzzleContainerTransform: "cc.UITransform",
-      restingGroupBorderGraphics: "cc.Graphics",
-      activeGroupRoot: "cc.Node",
-      activePieceContainer: "cc.Node",
-      activeGroupBorderGraphics: "cc.Graphics",
-      sourcePreviewNode: "cc.Node",
-      sourcePreviewOverlay: "cc.Graphics",
-      sourcePreviewSprite: "cc.Sprite",
-      sourcePreviewCountdownLabel: "cc.Label",
-      timerBarBackground: "cc.Graphics",
-      timerBarFill: "cc.Graphics",
-      timerLabel: "cc.Label",
-      restartButton: "cc.Button",
-      backButton: "cc.Button",
-      addTimeToolButton: "cc.Button",
-      viewSourceToolButton: "cc.Button",
-      autoMergeToolButton: "cc.Button",
-    });
-    validateGamePanelHierarchy(objects, relativePath);
-    const piecePrefabMeta = JSON.parse(
-      fs.readFileSync(
-        path.join(prefabRoot, "game/PuzzlePiece.prefab.meta"),
-        "utf8",
-      ),
-    );
-    validatePrefabAssetBinding(
+/** 校验单个 Scene 或 Prefab 的结构、脚本、资源引用与必填绑定。 */
+function validateSerializedAsset(
+  assetConfig,
+  localUuidIndex,
+  compiledScriptRegistry,
+  scriptInfoCache,
+) {
+  const { assetPath, kind, scripts, checks = [] } = assetConfig;
+  const filePath = path.join(projectRoot, assetPath);
+  const objects = readJson(filePath, assetPath);
+  if (!Array.isArray(objects) || objects.length === 0) {
+    throw new Error(`${assetPath} 不是有效的 Cocos 序列化对象数组。`);
+  }
+
+  validateAssetMeta(assetPath, kind, localUuidIndex);
+  validateReferenceRange(objects, assetPath);
+  validateNodeRelations(objects, assetPath);
+  validateSerializedUuids(objects, assetPath, localUuidIndex);
+
+  const scriptResults = scripts.map((scriptConfig) =>
+    validateSerializedScript(
       objects,
-      relativePath,
-      "piecePrefab",
-      piecePrefabMeta.uuid,
+      assetPath,
+      scriptConfig,
+      compiledScriptRegistry,
+      scriptInfoCache,
+    ),
+  );
+  validateCustomScriptCoverage(objects, assetPath, scriptResults);
+
+  for (const checkName of checks) {
+    if (checkName === "noCanvasAudio") {
+      validateNoCanvasAudio(objects, assetPath, scriptResults);
+    } else if (checkName === "gamePanelHierarchy") {
+      validateGamePanelHierarchy(objects, assetPath);
+    }
+  }
+
+  return {
+    scriptCount: scriptResults.length,
+    bindingCount: scriptResults.reduce(
+      (total, result) => total + result.bindingCount,
+      0,
+    ),
+  };
+}
+
+/** 校验 Scene/Prefab 自身的 Meta 状态和主资源 UUID。 */
+function validateAssetMeta(assetPath, kind, localUuidIndex) {
+  const metaPath = `${assetPath}.meta`;
+  const meta = readJson(path.join(projectRoot, metaPath), metaPath);
+  if (meta.importer !== kind) {
+    throw new Error(`${metaPath} 的 importer 应为 ${kind}。`);
+  }
+  if (meta.imported !== true) {
+    throw new Error(`${metaPath} 尚未被 Creator 成功导入。`);
+  }
+  if (!standardUuidPattern.test(meta.uuid)) {
+    throw new Error(`${metaPath} 的主资源 UUID 格式无效。`);
+  }
+  if (localUuidIndex.get(meta.uuid) !== metaPath) {
+    throw new Error(`${metaPath} 的主资源 UUID 没有正确登记到本地索引。`);
+  }
+}
+
+/** 校验业务脚本 Meta、Creator 编译类型、挂载节点和全部 Inspector 绑定。 */
+function validateSerializedScript(
+  objects,
+  assetPath,
+  scriptConfig,
+  compiledScriptRegistry,
+  scriptInfoCache,
+) {
+  const scriptInfo = resolveScriptInfo(
+    scriptConfig,
+    compiledScriptRegistry,
+    scriptInfoCache,
+  );
+  const matches = objects
+    .map((object, objectId) => ({ object, objectId }))
+    .filter(({ object }) => object?.__type__ === scriptInfo.typeId);
+  if (matches.length !== 1) {
+    throw new Error(
+      `${assetPath} 必须有且只有一个 ${scriptConfig.className} 脚本，当前数量为 ${matches.length}。`,
     );
-  } else if (filePath.endsWith("UIResultPanel.prefab")) {
-    validatePrefabBindings(objects, relativePath, {
-      overlayGraphics: "cc.Graphics",
-      panelGraphics: "cc.Graphics",
-      titleLabel: "cc.Label",
-      messageLabel: "cc.Label",
-      primaryButton: "cc.Button",
-      primaryButtonGraphics: "cc.Graphics",
-      primaryButtonLabel: "cc.Label",
-      homeButton: "cc.Button",
-      homeButtonGraphics: "cc.Graphics",
-    });
-  } else if (filePath.endsWith("UILoadErrorPanel.prefab")) {
-    validatePrefabBindings(objects, relativePath, {
-      overlayGraphics: "cc.Graphics",
-      panelGraphics: "cc.Graphics",
-      titleLabel: "cc.Label",
-      messageLabel: "cc.Label",
-      retryButton: "cc.Button",
-      retryButtonGraphics: "cc.Graphics",
-      retryButtonLabel: "cc.Label",
-      backButton: "cc.Button",
-      backButtonGraphics: "cc.Graphics",
-      backButtonLabel: "cc.Label",
-    });
+  }
+
+  const [{ object: script, objectId: scriptId }] = matches;
+  const hostNode = objects[script.node?.__id__];
+  if (
+    hostNode?.__type__ !== "cc.Node" ||
+    hostNode._name !== scriptConfig.hostNodeName
+  ) {
+    throw new Error(
+      `${assetPath} 的 ${scriptConfig.className} 没有挂载到 ${scriptConfig.hostNodeName} 节点。`,
+    );
+  }
+
+  let bindingCount = 0;
+  for (const [field, binding] of Object.entries(
+    scriptConfig.objectBindings ?? {},
+  )) {
+    validateObjectBinding(objects, assetPath, scriptConfig, script, field, binding);
+    bindingCount += 1;
+  }
+  for (const [field, binding] of Object.entries(
+    scriptConfig.assetBindings ?? {},
+  )) {
+    validateAssetBinding(assetPath, scriptConfig, script, field, binding);
+    bindingCount += 1;
+  }
+
+  return {
+    className: scriptConfig.className,
+    typeId: scriptInfo.typeId,
+    script,
+    scriptId,
+    bindingCount,
+  };
+}
+
+/** 从脚本 Meta 推导类 ID，并与 Creator 实际编译结果交叉校验。 */
+function resolveScriptInfo(scriptConfig, compiledScriptRegistry, cache) {
+  const cacheKey = `${scriptConfig.sourcePath}:${scriptConfig.className}`;
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const sourcePath = path.join(projectRoot, scriptConfig.sourcePath);
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error(`${scriptConfig.className} 源码不存在：${scriptConfig.sourcePath}`);
+  }
+  const source = fs.readFileSync(sourcePath, "utf8");
+  const ccclassPattern = new RegExp(
+    `@ccclass\\(\\s*["']${escapeRegExp(scriptConfig.className)}["']\\s*\\)`,
+  );
+  if (!ccclassPattern.test(source)) {
+    throw new Error(
+      `${scriptConfig.sourcePath} 没有声明 @ccclass("${scriptConfig.className}")。`,
+    );
+  }
+
+  const metaPath = `${scriptConfig.sourcePath}.meta`;
+  const meta = readJson(path.join(projectRoot, metaPath), metaPath);
+  if (meta.importer !== "typescript" || meta.imported !== true) {
+    throw new Error(`${metaPath} 尚未作为 TypeScript 被 Creator 成功导入。`);
+  }
+  if (!standardUuidPattern.test(meta.uuid)) {
+    throw new Error(`${metaPath} 的脚本 UUID 格式无效。`);
+  }
+
+  const typeId = compressUuid(meta.uuid);
+  const compiledTypeIds = compiledScriptRegistry.get(scriptConfig.className);
+  if (!compiledTypeIds || compiledTypeIds.size === 0) {
+    throw new Error(
+      `Creator 编译结果中找不到 ${scriptConfig.className}，请重新导入脚本。`,
+    );
+  }
+  if (compiledTypeIds.size !== 1 || !compiledTypeIds.has(typeId)) {
+    throw new Error(
+      `${scriptConfig.className} 的 Meta 类 ID ${typeId} 与 Creator 编译结果 ${[
+        ...compiledTypeIds,
+      ].join("、")} 不一致。`,
+    );
+  }
+
+  const result = { typeId };
+  cache.set(cacheKey, result);
+  return result;
+}
+
+/** 校验所有非 cc 内置组件都已由当前资源清单明确登记。 */
+function validateCustomScriptCoverage(objects, assetPath, scriptResults) {
+  const expectedTypeIds = new Set(scriptResults.map((item) => item.typeId));
+  const customScripts = objects.filter(
+    (object) =>
+      object?.node?.__id__ !== undefined &&
+      typeof object.__type__ === "string" &&
+      !object.__type__.startsWith("cc."),
+  );
+  const unexpected = customScripts
+    .map((script) => script.__type__)
+    .filter((typeId) => !expectedTypeIds.has(typeId));
+  if (unexpected.length > 0) {
+    throw new Error(
+      `${assetPath} 存在清单未登记或无法识别的脚本类型：${[
+        ...new Set(unexpected),
+      ].join("、")}。`,
+    );
+  }
+  if (customScripts.length !== scriptResults.length) {
+    throw new Error(`${assetPath} 的业务脚本数量与清单不一致。`);
+  }
+}
+
+/** 校验绑定对象的组件类型及其所在节点，防止同类型组件绑错位置。 */
+function validateObjectBinding(
+  objects,
+  assetPath,
+  scriptConfig,
+  script,
+  field,
+  binding,
+) {
+  const referenceId = script[field]?.__id__;
+  const target = objects[referenceId];
+  if (target?.__type__ !== binding.type) {
+    throw new Error(
+      `${assetPath} 的 ${scriptConfig.className}.${field} 未绑定到 ${binding.type}。`,
+    );
+  }
+
+  const ownerNode =
+    target.__type__ === "cc.Node" ? target : objects[target.node?.__id__];
+  if (ownerNode?.__type__ !== "cc.Node" || ownerNode._name !== binding.nodeName) {
+    throw new Error(
+      `${assetPath} 的 ${scriptConfig.className}.${field} 未绑定到 ${binding.nodeName} 节点。`,
+    );
+  }
+}
+
+/** 校验脚本显式引用了目标 Meta 对应的资源 UUID 和资源类型。 */
+function validateAssetBinding(
+  assetPath,
+  scriptConfig,
+  script,
+  field,
+  binding,
+) {
+  const meta = readJson(
+    path.join(projectRoot, binding.assetMetaPath),
+    binding.assetMetaPath,
+  );
+  const expectedImporter = binding.type === "cc.Prefab" ? "prefab" : undefined;
+  if (
+    meta.imported !== true ||
+    !standardUuidPattern.test(meta.uuid) ||
+    (expectedImporter && meta.importer !== expectedImporter)
+  ) {
+    throw new Error(
+      `${binding.assetMetaPath} 不是已成功导入的 ${binding.type} 资源 Meta。`,
+    );
+  }
+  const serializedBinding = script[field];
+  if (
+    serializedBinding?.__uuid__ !== meta.uuid ||
+    serializedBinding?.__expectedType__ !== binding.type
+  ) {
+    throw new Error(
+      `${assetPath} 的 ${scriptConfig.className}.${field} 没有绑定预期 ${binding.type} 资源。`,
+    );
+  }
+}
+
+/** 校验场景 Canvas 不再持有旧版场景级 AudioSource。 */
+function validateNoCanvasAudio(objects, assetPath, scriptResults) {
+  const canvasEntries = objects
+    .map((object, objectId) => ({ object, objectId }))
+    .filter(
+      ({ object }) => object?.__type__ === "cc.Node" && object._name === "Canvas",
+    );
+  if (canvasEntries.length !== 1) {
+    throw new Error(`${assetPath} 必须有且只有一个 Canvas 节点。`);
+  }
+
+  const [{ object: canvas }] = canvasEntries;
+  const canvasHasAudio = (canvas._components ?? []).some(
+    (reference) => objects[reference.__id__]?.__type__ === "cc.AudioSource",
+  );
+  if (canvasHasAudio) {
+    throw new Error(`${assetPath} 的 Canvas 仍挂载旧版 AudioSource。`);
+  }
+  for (const result of scriptResults) {
+    if (Object.hasOwn(result.script, "audioSource")) {
+      throw new Error(
+        `${assetPath} 的 ${result.className} 仍保留旧版 audioSource 绑定。`,
+      );
+    }
   }
 }
 
 /** 校验组合边框层和活动拼图容器位于确定的父节点下。 */
-function validateGamePanelHierarchy(objects, relativePath) {
+function validateGamePanelHierarchy(objects, assetPath) {
   const getUniqueNodeId = (name) => {
     const ids = objects
       .map((object, index) => ({ object, index }))
@@ -146,7 +586,7 @@ function validateGamePanelHierarchy(objects, relativePath) {
       )
       .map(({ index }) => index);
     if (ids.length !== 1) {
-      throw new Error(`${relativePath} 必须有且只有一个 ${name} 节点。`);
+      throw new Error(`${assetPath} 必须有且只有一个 ${name} 节点。`);
     }
     return ids[0];
   };
@@ -162,24 +602,27 @@ function validateGamePanelHierarchy(objects, relativePath) {
     objects[activePieceContainerId]._parent?.__id__ !== activeRootId ||
     objects[activeBorderId]._parent?.__id__ !== activeRootId
   ) {
-    throw new Error(`${relativePath} 的组合边框或活动组合节点层级不正确。`);
+    throw new Error(`${assetPath} 的组合边框或活动组合节点层级不正确。`);
   }
 }
 
 /** 校验所有内部 __id__ 引用都没有越界。 */
-function validateReferenceRange(objects, relativePath) {
-  visitValue(objects, (referenceId) => {
-    if (!Number.isInteger(referenceId) || referenceId < 0 || referenceId >= objects.length) {
-      throw new Error(`${relativePath} 存在越界引用：__id__=${referenceId}`);
+function validateReferenceRange(objects, assetPath) {
+  visitObject(objects, (value, key) => {
+    if (key !== "__id__") {
+      return;
+    }
+    if (!Number.isInteger(value) || value < 0 || value >= objects.length) {
+      throw new Error(`${assetPath} 存在越界引用：__id__=${String(value)}`);
     }
   });
 }
 
 /** 校验节点父子关系和组件所属节点保持双向一致。 */
-function validateNodeRelations(objects, relativePath) {
+function validateNodeRelations(objects, assetPath) {
   objects.forEach((object, objectId) => {
     if (object.__type__ !== "cc.Node") {
-      validateComponentOwner(objects, object, objectId, relativePath);
+      validateComponentOwner(objects, object, objectId, assetPath);
       return;
     }
 
@@ -191,7 +634,7 @@ function validateNodeRelations(objects, relativePath) {
       );
       if (!parentContainsNode) {
         throw new Error(
-          `${relativePath} 的节点 ${object._name} 没有登记在父节点 children 中。`,
+          `${assetPath} 的节点 ${object._name} 没有登记在父节点 children 中。`,
         );
       }
     }
@@ -199,26 +642,22 @@ function validateNodeRelations(objects, relativePath) {
     for (const childReference of object._children ?? []) {
       const child = objects[childReference.__id__];
       if (child?.__type__ !== "cc.Node" || child._parent?.__id__ !== objectId) {
-        throw new Error(
-          `${relativePath} 的节点 ${object._name} 存在不一致的父子引用。`,
-        );
+        throw new Error(`${assetPath} 的节点 ${object._name} 存在不一致的父子引用。`);
       }
     }
 
     for (const componentReference of object._components ?? []) {
       const component = objects[componentReference.__id__];
       if (!component || component.node?.__id__ !== objectId) {
-        throw new Error(
-          `${relativePath} 的节点 ${object._name} 存在不一致的组件引用。`,
-        );
+        throw new Error(`${assetPath} 的节点 ${object._name} 存在不一致的组件引用。`);
       }
     }
   });
 }
 
 /** 校验带 node 引用的组件也登记在所属节点 components 中。 */
-function validateComponentOwner(objects, component, componentId, relativePath) {
-  if (component.node?.__id__ === undefined) {
+function validateComponentOwner(objects, component, componentId, assetPath) {
+  if (component?.node?.__id__ === undefined) {
     return;
   }
   const ownerNode = objects[component.node.__id__];
@@ -227,103 +666,66 @@ function validateComponentOwner(objects, component, componentId, relativePath) {
   );
   if (ownerNode?.__type__ !== "cc.Node" || !ownerContainsComponent) {
     throw new Error(
-      `${relativePath} 的组件 ${component.__type__} 没有登记在所属节点 components 中。`,
+      `${assetPath} 的组件 ${component.__type__} 没有登记在所属节点 components 中。`,
     );
   }
 }
 
-/** 校验 Lobby/Game 场景脚本的 UIRoot 绑定和全局音频迁移结果。 */
-function validateSceneBindings(objects, relativePath) {
-  const canvasId = objects.findIndex(
-    (object) => object.__type__ === "cc.Node" && object._name === "Canvas",
-  );
-  if (canvasId < 0) {
-    throw new Error(`${relativePath} 缺少 Canvas 节点。`);
-  }
-
-  const canvas = objects[canvasId];
-  const scriptIds = (canvas._components ?? [])
-    .map((item) => item.__id__)
-    .filter((id) => !String(objects[id]?.__type__).startsWith("cc."));
-  if (scriptIds.length !== 1) {
-    throw new Error(`${relativePath} 的 Canvas 场景脚本数量不是 1。`);
-  }
-
-  const script = objects[scriptIds[0]];
-  const uiRoot = objects[script.uiRoot?.__id__];
-  if (uiRoot?.__type__ !== "cc.Node" || uiRoot._name !== "UIRoot") {
-    throw new Error(`${relativePath} 的场景脚本没有正确绑定 UIRoot。`);
-  }
-  if (Object.hasOwn(script, "audioSource")) {
-    throw new Error(`${relativePath} 仍保留旧版场景级 audioSource 绑定。`);
-  }
-  const canvasAudioSource = (canvas._components ?? [])
-    .map((component) => objects[component.__id__])
-    .find((component) => component?.__type__ === "cc.AudioSource");
-  if (canvasAudioSource) {
-    throw new Error(`${relativePath} 的 Canvas 仍挂载旧版 AudioSource。`);
-  }
-}
-
-/** 校验业务 Prefab 脚本的必填属性绑定及目标组件类型。 */
-function validatePrefabBindings(objects, relativePath, requiredBindings) {
-  const candidateScripts = objects.filter(
-    (object) =>
-      object?.node?.__id__ !== undefined &&
-      !String(object.__type__).startsWith("cc.") &&
-      Object.keys(requiredBindings).some((field) => Object.hasOwn(object, field)),
-  );
-  if (candidateScripts.length !== 1) {
-    throw new Error(`${relativePath} 无法确定唯一的业务面板脚本。`);
-  }
-
-  const script = candidateScripts[0];
-  for (const [field, expectedType] of Object.entries(requiredBindings)) {
-    const component = objects[script[field]?.__id__];
-    if (component?.__type__ !== expectedType) {
-      throw new Error(
-        `${relativePath} 的必填字段 ${field} 未绑定到 ${expectedType}。`,
-      );
+/** 校验序列化资源引用能解析到项目资源或已登记的 Creator 内置资源。 */
+function validateSerializedUuids(objects, assetPath, localUuidIndex) {
+  visitObject(objects, (value, key) => {
+    if (key !== "__uuid__") {
+      return;
     }
+    if (typeof value !== "string" || !serializedUuidPattern.test(value)) {
+      throw new Error(`${assetPath} 包含格式无效的资源 UUID：${String(value)}`);
+    }
+    if (!localUuidIndex.has(value) && !internalAssetUuids.has(value)) {
+      throw new Error(`${assetPath} 引用了无法解析的资源 UUID：${value}`);
+    }
+  });
+}
+
+/** 将标准 UUID 压缩为 Creator 序列化脚本使用的 23 位类 ID。 */
+function compressUuid(uuid) {
+  const hex = uuid.replaceAll("-", "");
+  let result = hex.slice(0, 5);
+  for (let index = 5; index < hex.length; index += 3) {
+    const value = Number.parseInt(hex.slice(index, index + 3), 16);
+    result += compressedUuidAlphabet[value >> 6];
+    result += compressedUuidAlphabet[value & 63];
+  }
+  return result;
+}
+
+/** 读取 JSON，并把文件缺失或语法错误转换为包含路径的明确错误。 */
+function readJson(filePath, relativePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`无法读取 ${relativePath}：${message}`);
   }
 }
 
-/** 校验业务脚本显式引用了指定 UUID 的 Prefab 资源。 */
-function validatePrefabAssetBinding(
-  objects,
-  relativePath,
-  field,
-  expectedUuid,
-) {
-  const candidateScripts = objects.filter(
-    (object) => object?.node?.__id__ !== undefined && Object.hasOwn(object, field),
-  );
-  if (candidateScripts.length !== 1) {
-    throw new Error(`${relativePath} 无法确定包含 ${field} 的唯一业务脚本。`);
-  }
-  const binding = candidateScripts[0][field];
-  if (
-    binding?.__uuid__ !== expectedUuid ||
-    binding?.__expectedType__ !== "cc.Prefab"
-  ) {
-    throw new Error(`${relativePath} 的 ${field} 没有绑定预期 Prefab UUID。`);
-  }
-}
-
-/** 递归遍历 JSON 中的 Cocos 内部引用。 */
-function visitValue(value, onReference) {
+/** 深度遍历对象中的每个属性，供引用和 Meta UUID 校验复用。 */
+function visitObject(value, visitor) {
   if (Array.isArray(value)) {
-    value.forEach((item) => visitValue(item, onReference));
+    value.forEach((item) => visitObject(item, visitor));
     return;
   }
   if (!value || typeof value !== "object") {
     return;
   }
-  if (Object.keys(value).length === 1 && Object.hasOwn(value, "__id__")) {
-    onReference(value.__id__);
-    return;
+  for (const [key, child] of Object.entries(value)) {
+    visitor(child, key);
+    visitObject(child, visitor);
   }
-  Object.values(value).forEach((item) => visitValue(item, onReference));
+}
+
+/** 转义动态类名，避免生成的正则表达式改变语义。 */
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 main();
