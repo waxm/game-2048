@@ -22,6 +22,12 @@
       "status": "approved"
     },
     {
+      "id": "requirement-three-scene-flow",
+      "kind": "requirement",
+      "location": "chat://2048-three-scene-flow",
+      "status": "approved"
+    },
+    {
       "id": "design-reference",
       "kind": "design",
       "location": "https://zhangdianwei.github.io/#Game2048",
@@ -50,7 +56,9 @@
       "本地 AI 敌人移动、收集和角色碰撞",
       "按角色首位数字比较的吞噬或相同数字合并",
       "圆形边界限制、回推和蹭边动画",
-      "分数、排名、操作提示、失败和重新开始界面"
+      "分数、排名、操作提示、失败和重新开始界面",
+      "启动、2048 大厅、游戏三个独立场景及完整往返流程",
+      "场景跳转防重复操作、失败提示和可恢复重试"
     ],
     "excluded": [
       "联网真人玩家和服务器同步",
@@ -127,19 +135,73 @@
         "design-reference"
       ],
       "reason": "当前目标是先完成可玩 Demo，程序化 2D 图形可以保持资源结构干净并快速验证玩法。"
+    },
+    {
+      "id": "decision-three-scene-flow",
+      "statement": "应用固定使用 Boot、Lobby、Game2048 三个场景；启动完成进入大厅，大厅开始游戏，游戏中和结算后均可返回大厅。",
+      "confidence": "explicit",
+      "impact": "structure",
+      "sources": [
+        "requirement-three-scene-flow"
+      ]
+    },
+    {
+      "id": "decision-transition-recovery",
+      "statement": "场景跳转期间禁用重复操作，跳转失败时恢复按钮并显示可重试状态，避免界面卡死。",
+      "confidence": "inferred",
+      "impact": "behavior",
+      "sources": [
+        "requirement-three-scene-flow",
+        "project-rules"
+      ],
+      "reason": "三个场景存在异步切换，失败路径必须可见且可恢复，才能形成稳定的完整流程。"
     }
   ],
   "openQuestions": [],
   "states": [
-    "initializing",
+    "boot-loading",
+    "boot-failed",
+    "lobby-ready",
+    "lobby-transitioning",
     "playing",
-    "game-over"
+    "game-over",
+    "game-transitioning"
   ],
   "transitions": [
     {
-      "event": "world-ready",
-      "from": "initializing",
+      "event": "boot-complete",
+      "from": "boot-loading",
+      "to": "lobby-ready",
+      "authority": "client"
+    },
+    {
+      "event": "boot-load-failed",
+      "from": "boot-loading",
+      "to": "boot-failed",
+      "authority": "client"
+    },
+    {
+      "event": "retry-boot",
+      "from": "boot-failed",
+      "to": "boot-loading",
+      "authority": "client"
+    },
+    {
+      "event": "start-game",
+      "from": "lobby-ready",
+      "to": "lobby-transitioning",
+      "authority": "client"
+    },
+    {
+      "event": "game-scene-ready",
+      "from": "lobby-transitioning",
       "to": "playing",
+      "authority": "client"
+    },
+    {
+      "event": "game-load-failed",
+      "from": "lobby-transitioning",
+      "to": "lobby-ready",
       "authority": "client"
     },
     {
@@ -153,10 +215,54 @@
       "from": "game-over",
       "to": "playing",
       "authority": "client"
+    },
+    {
+      "event": "back-to-lobby",
+      "from": "playing",
+      "to": "game-transitioning",
+      "authority": "client"
+    },
+    {
+      "event": "back-to-lobby",
+      "from": "game-over",
+      "to": "game-transitioning",
+      "authority": "client"
+    },
+    {
+      "event": "lobby-scene-ready",
+      "from": "game-transitioning",
+      "to": "lobby-ready",
+      "authority": "client"
+    },
+    {
+      "event": "lobby-load-failed",
+      "from": "game-transitioning",
+      "to": "playing",
+      "authority": "client"
     }
   ],
   "architecture": {
     "artifacts": [
+      {
+        "id": "boot-controller",
+        "role": "controller",
+        "responsibility": "初始化框架、驱动启动进度并进入大厅，失败后允许重试。"
+      },
+      {
+        "id": "boot-view",
+        "role": "view",
+        "responsibility": "通过显式 Inspector 引用渲染启动背景、进度和失败状态。"
+      },
+      {
+        "id": "lobby-controller",
+        "role": "controller",
+        "responsibility": "管理大厅开始游戏操作、异步跳转保护和失败恢复。"
+      },
+      {
+        "id": "lobby-view",
+        "role": "view",
+        "responsibility": "通过显式 Inspector 引用渲染 2048 大厅、规则说明和跳转状态。"
+      },
       {
         "id": "game2048-world",
         "role": "domain",
@@ -181,12 +287,27 @@
         "id": "game2048-config",
         "role": "config",
         "responsibility": "集中维护竞技场半径、速度、AI 数量、道具数量和颜色等可调参数。"
+      },
+      {
+        "id": "scene-generator",
+        "role": "config",
+        "responsibility": "使用稳定 UUID 和 Creator 实际脚本类 ID 可重复生成并校验三个场景。"
       }
     ]
   },
   "interfaces": [],
   "ui": {
     "screens": [
+      {
+        "id": "boot-screen",
+        "kind": "scene",
+        "prefab": "Boot"
+      },
+      {
+        "id": "lobby-screen",
+        "kind": "scene",
+        "prefab": "Lobby"
+      },
       {
         "id": "game2048-screen",
         "kind": "scene",
@@ -195,6 +316,42 @@
     ],
     "lists": [],
     "bindings": [
+      {
+        "name": "bootView",
+        "component": "BootSceneView",
+        "owner": "boot-controller",
+        "classification": "dynamic",
+        "source": "boot scene",
+        "required": true,
+        "reason": "显示启动进度、失败提示和重试状态。"
+      },
+      {
+        "name": "retryButton",
+        "component": "Button",
+        "owner": "boot-controller",
+        "classification": "interactive",
+        "source": "boot retry action",
+        "required": true,
+        "reason": "大厅加载失败后允许用户重试。"
+      },
+      {
+        "name": "lobbyView",
+        "component": "LobbySceneView",
+        "owner": "lobby-controller",
+        "classification": "dynamic",
+        "source": "lobby scene",
+        "required": true,
+        "reason": "显示大厅视觉与跳转状态。"
+      },
+      {
+        "name": "startButton",
+        "component": "Button",
+        "owner": "lobby-controller",
+        "classification": "interactive",
+        "source": "start game action",
+        "required": true,
+        "reason": "从大厅进入 2048 游戏。"
+      },
       {
         "name": "arenaGraphics",
         "component": "Graphics",
@@ -266,9 +423,39 @@
         "source": "restart action",
         "required": true,
         "reason": "允许重新开始完整玩法循环。"
+      },
+      {
+        "name": "backButton",
+        "component": "Button",
+        "owner": "game2048-controller",
+        "classification": "interactive",
+        "source": "normal back-to-lobby action",
+        "required": true,
+        "reason": "游戏进行中允许返回大厅。"
+      },
+      {
+        "name": "gameOverLobbyButton",
+        "component": "Button",
+        "owner": "game2048-controller",
+        "classification": "interactive",
+        "source": "game-over back-to-lobby action",
+        "required": true,
+        "reason": "结算界面允许返回大厅。"
       }
     ],
     "actions": [
+      {
+        "id": "retry-boot",
+        "owner": "boot-controller",
+        "trigger": "click",
+        "handler": "BootScene.retryEnterLobby"
+      },
+      {
+        "id": "start-game",
+        "owner": "lobby-controller",
+        "trigger": "click",
+        "handler": "LobbySceneController.startGame"
+      },
       {
         "id": "change-direction",
         "owner": "game2048-controller",
@@ -280,9 +467,35 @@
         "owner": "game2048-controller",
         "trigger": "click",
         "handler": "Game2048SceneController.restartGame"
+      },
+      {
+        "id": "back-to-lobby",
+        "owner": "game2048-controller",
+        "trigger": "click",
+        "handler": "Game2048SceneController.backToLobby"
       }
     ],
     "visualStates": [
+      {
+        "id": "boot-loading-state",
+        "owner": "boot-view",
+        "description": "显示品牌标题、加载进度和当前启动状态。"
+      },
+      {
+        "id": "boot-failed-state",
+        "owner": "boot-view",
+        "description": "显示进入大厅失败提示和重试按钮。"
+      },
+      {
+        "id": "lobby-ready-state",
+        "owner": "lobby-view",
+        "description": "显示 2048 主题、大厅玩法说明和开始游戏按钮。"
+      },
+      {
+        "id": "lobby-transitioning-state",
+        "owner": "lobby-view",
+        "description": "开始按钮进入加载状态并阻止重复点击。"
+      },
       {
         "id": "playing-state",
         "owner": "game2048-view",
@@ -351,6 +564,33 @@
           "requirement-chat",
           "project-rules"
         ]
+      },
+      {
+        "id": "case-boot-to-lobby",
+        "title": "启动场景完成初始化后进入大厅，失败时可见并可重试",
+        "status": "passed",
+        "sources": [
+          "requirement-three-scene-flow",
+          "project-rules"
+        ]
+      },
+      {
+        "id": "case-lobby-to-game",
+        "title": "大厅点击开始游戏进入 Game2048，跳转期间不重复触发且失败后恢复",
+        "status": "passed",
+        "sources": [
+          "requirement-three-scene-flow",
+          "project-rules"
+        ]
+      },
+      {
+        "id": "case-game-to-lobby",
+        "title": "游戏中可返回大厅并再次开局，结算页返回入口完成显式绑定",
+        "status": "passed",
+        "sources": [
+          "requirement-three-scene-flow",
+          "project-rules"
+        ]
       }
     ],
     "gates": [
@@ -396,32 +636,32 @@
     {
       "gate": "contract",
       "type": "manual",
-      "result": "已结合用户确认规则、参考玩法实际体验和项目 AGENTS.md 完成范围、行为与绑定契约。",
+      "result": "已结合用户确认规则、三场景最新要求、参考玩法实际体验和项目 AGENTS.md 完成范围、状态、行为与绑定契约。",
       "reference": "manual://game2048-demo/contract-review"
     },
     {
       "gate": "static",
       "type": "automation",
-      "result": "tsc --noEmit、28 个核心框架用例、10 个玩法领域用例和 Cocos 资源清单校验全部通过。",
+      "result": "npm run verify 全部通过：TypeScript、28 个核心用例、10 个玩法用例，以及 3 个场景、6 个脚本和 26 个必填绑定校验。",
       "reference": "command://npm-run-verify"
     },
     {
       "gate": "creator-import",
-      "type": "manual",
-      "result": "Cocos Creator 3.8.4 已重新导入 Game2048 场景与脚本；Scene Meta 为 imported，最终导入日志无新增错误或警告。",
-      "reference": "creator://3.8.4/assets-scene-game2048"
+      "type": "creator",
+      "result": "Cocos Creator 3.8.4 已重新导入 Boot、Lobby、Game2048 及新增脚本；场景可在编辑器正常展开，最新导入控制台无错误或警告。",
+      "reference": "creator://3.8.4/three-scene-import"
     },
     {
       "gate": "visual",
-      "type": "manual",
-      "result": "已在 640 x 1136 设计分辨率预览中检查圆形地图、数字配色、方形队首、出生护盾、结算遮罩与按钮。",
-      "reference": "preview://127.0.0.1:7456/game2048-visual"
+      "type": "visual",
+      "result": "已在 640 x 1136 设计尺寸和 200 x 400 手机缩放预览中检查启动、大厅、游戏 HUD、返回大厅入口及主要文本，无越界和遮挡。",
+      "reference": "preview://127.0.0.1:7456/three-scene-visual"
     },
     {
       "gate": "functional-smoke",
       "type": "manual",
-      "result": "实际预览确认 Boot 会自动进入玩法，并完成出生、持续移动、鼠标转向、键盘输入、道具收集、从 2 连续合并到 16、失败和重新开始流程，控制台零错误警告。",
-      "reference": "preview://127.0.0.1:7456/game2048-smoke"
+      "result": "实际预览完成 Boot → Lobby → Game2048 → Lobby → 再次 Game2048；日志记录 8 条场景开始/完成事件，刷新后错误和警告均为 0。",
+      "reference": "preview://127.0.0.1:7456/three-scene-flow"
     },
     {
       "gate": "functional",
@@ -438,17 +678,65 @@
     {
       "gate": "lifecycle",
       "type": "manual",
-      "result": "输入和按钮监听具有成对注册/注销及幂等保护；实际预览重复开始后响应正常且控制台无重复监听错误。",
-      "reference": "preview://127.0.0.1:7456/game2048-restart"
+      "result": "按钮和输入监听均成对清理；重复进入游戏、返回大厅和再次开局后无重复响应，销毁阶段 Button.node 已做双层判空。",
+      "reference": "preview://127.0.0.1:7456/three-scene-lifecycle"
     },
     {
       "gate": "regression",
       "type": "automation",
-      "result": "全量 npm run verify 通过，原有核心框架 28 个用例保持通过。",
+      "result": "全量 npm run verify 与 git diff --check 通过，玩法领域 10/10、核心框架 28/28 保持通过。",
       "reference": "command://npm-run-verify-regression"
     }
   ],
   "deliverables": [
+    {
+      "kind": "controller",
+      "path": "assets/app/scenes/BootScene.ts",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "view",
+      "path": "assets/app/ui/common/BootSceneView.ts",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "controller",
+      "path": "assets/app/scenes/LobbySceneController.ts",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "view",
+      "path": "assets/app/ui/home/LobbySceneView.ts",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "scene",
+      "path": "assets/scene/Boot.scene",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "scene",
+      "path": "assets/scene/Lobby.scene",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
     {
       "kind": "model",
       "path": "assets/app/game/game2048/Game2048Model.ts",

@@ -13,6 +13,84 @@ export const cocosAssetManifest = [
         className: "BootScene",
         sourcePath: "assets/app/scenes/BootScene.ts",
         hostNodeName: "Canvas",
+        objectBindings: {
+          view: {
+            type: "d115dmtPNlHdoWH+IFb6mIr",
+            nodeName: "BootView",
+          },
+          retryButton: {
+            type: "cc.Button",
+            nodeName: "BootRetryButton",
+          },
+        },
+      },
+      {
+        className: "BootSceneView",
+        sourcePath: "assets/app/ui/common/BootSceneView.ts",
+        hostNodeName: "BootView",
+        objectBindings: {
+          backgroundGraphics: {
+            type: "cc.Graphics",
+            nodeName: "BootBackgroundGraphics",
+          },
+          progressGraphics: {
+            type: "cc.Graphics",
+            nodeName: "BootProgressGraphics",
+          },
+          statusLabel: {
+            type: "cc.Label",
+            nodeName: "BootStatusLabel",
+          },
+          percentLabel: {
+            type: "cc.Label",
+            nodeName: "BootPercentLabel",
+          },
+          retryNode: {
+            type: "cc.Node",
+            nodeName: "BootRetryButton",
+          },
+        },
+      },
+    ],
+    checks: ["noCanvasAudio"],
+  },
+  {
+    kind: "scene",
+    assetPath: "assets/scene/Lobby.scene",
+    scripts: [
+      {
+        className: "LobbySceneController",
+        sourcePath: "assets/app/scenes/LobbySceneController.ts",
+        hostNodeName: "Canvas",
+        objectBindings: {
+          view: {
+            type: "269b7u0CiVPwZLMOQuts54P",
+            nodeName: "LobbyView",
+          },
+          startButton: {
+            type: "cc.Button",
+            nodeName: "StartGameButton",
+          },
+        },
+      },
+      {
+        className: "LobbySceneView",
+        sourcePath: "assets/app/ui/home/LobbySceneView.ts",
+        hostNodeName: "LobbyView",
+        objectBindings: {
+          backgroundGraphics: {
+            type: "cc.Graphics",
+            nodeName: "LobbyBackgroundGraphics",
+          },
+          statusLabel: {
+            type: "cc.Label",
+            nodeName: "LobbyStatusLabel",
+          },
+          startLabel: {
+            type: "cc.Label",
+            nodeName: "StartGameButtonLabel",
+          },
+        },
       },
     ],
     checks: ["noCanvasAudio"],
@@ -33,6 +111,14 @@ export const cocosAssetManifest = [
           inputSurface: { type: "cc.Node", nodeName: "Canvas" },
           gameOverPanel: { type: "cc.Node", nodeName: "GameOverPanel" },
           restartButton: { type: "cc.Button", nodeName: "RestartButton" },
+          backButton: {
+            type: "cc.Button",
+            nodeName: "BackToLobbyButton",
+          },
+          gameOverLobbyButton: {
+            type: "cc.Button",
+            nodeName: "GameOverLobbyButton",
+          },
         },
       },
       {

@@ -458,6 +458,14 @@ export class Game2048Renderer extends Component {
         graphics.roundRect(-304, panelY - 35, 608, 70, 20);
         graphics.stroke();
 
+        graphics.fillColor = new Color(24, 33, 53, 245);
+        graphics.roundRect(-304, panelY - 108, 126, 50, 15);
+        graphics.fill();
+        graphics.lineWidth = 2;
+        graphics.strokeColor = new Color(104, 129, 165, 230);
+        graphics.roundRect(-304, panelY - 108, 126, 50, 15);
+        graphics.stroke();
+
         this.drawScoreIcon(graphics, { x: -268, y: panelY });
         this.drawVectorNumber(
             graphics,
@@ -566,15 +574,19 @@ export class Game2048Renderer extends Component {
         graphics.fill();
 
         graphics.fillColor = new Color(24, 33, 53, 250);
-        graphics.roundRect(-260, -224, 520, 448, 34);
+        graphics.roundRect(-260, -278, 520, 502, 34);
         graphics.fill();
         graphics.lineWidth = 3;
         graphics.strokeColor = new Color(104, 129, 165, 255);
-        graphics.roundRect(-260, -224, 520, 448, 34);
+        graphics.roundRect(-260, -278, 520, 502, 34);
         graphics.stroke();
 
         graphics.fillColor = new Color(108, 92, 231, 255);
-        graphics.roundRect(-138, -160, 276, 78, 22);
+        graphics.roundRect(-174, -150, 348, 72, 22);
+        graphics.fill();
+
+        graphics.fillColor = new Color(43, 56, 80, 255);
+        graphics.roundRect(-174, -242, 348, 64, 20);
         graphics.fill();
     }
 

@@ -10,9 +10,12 @@ import {
     UITransform,
     Vec3,
     input,
+    isValid,
 } from "cc";
 import { App } from "../core/app/App";
 import { SceneBase } from "../core/scene/SceneBase";
+import { SceneManager } from "../core/scene/SceneManager";
+import { Logger } from "../core/utils/Logger";
 import {
     Game2048Point,
     Game2048RunState,
@@ -48,6 +51,14 @@ export class Game2048SceneController extends SceneBase {
     @property(Button)
     public restartButton: Button | null = null;
 
+    /** 游戏进行中返回大厅的按钮。 */
+    @property(Button)
+    public backButton: Button | null = null;
+
+    /** 结算面板中返回大厅的按钮。 */
+    @property(Button)
+    public gameOverLobbyButton: Button | null = null;
+
     /** 与 Cocos 节点解耦的玩法领域对象。 */
     private readonly _world = new Game2048World();
 
@@ -60,6 +71,12 @@ export class Game2048SceneController extends SceneBase {
     /** 当前是否已经完成输入监听注册。 */
     private _inputBound = false;
 
+    /** 当前是否正在返回大厅，期间暂停玩法并屏蔽重复交互。 */
+    private _sceneTransitioning = false;
+
+    /** 返回大厅请求序号，用于忽略场景退出后的旧异步结果。 */
+    private _transitionSerial = 0;
+
     /** 场景进入：初始化框架并开始第一局。 */
     protected onEnter(): void {
         super.onEnter();
@@ -71,6 +88,8 @@ export class Game2048SceneController extends SceneBase {
             inputSurface: this.inputSurface,
             gameOverPanel: this.gameOverPanel,
             restartButton: this.restartButton,
+            backButton: this.backButton,
+            gameOverLobbyButton: this.gameOverLobbyButton,
         });
         if (!this.inputSurface!.getComponent(UITransform)) {
             throw new Error("2048 输入节点缺少 UITransform。");
@@ -86,6 +105,8 @@ export class Game2048SceneController extends SceneBase {
         this.assertRequiredBindings({
             inputSurface: this.inputSurface,
             restartButton: this.restartButton,
+            backButton: this.backButton,
+            gameOverLobbyButton: this.gameOverLobbyButton,
         });
         this._inputBound = true;
         this.inputSurface!.on(
@@ -113,6 +134,16 @@ export class Game2048SceneController extends SceneBase {
         this.restartButton!.node.on(
             Button.EventType.CLICK,
             this.restartGame,
+            this,
+        );
+        this.backButton!.node.on(
+            Button.EventType.CLICK,
+            this.backToLobby,
+            this,
+        );
+        this.gameOverLobbyButton!.node.on(
+            Button.EventType.CLICK,
+            this.backToLobby,
             this,
         );
     }
@@ -145,15 +176,27 @@ export class Game2048SceneController extends SceneBase {
         );
         input.off(Input.EventType.KEY_DOWN, this.handleKeyDown, this);
         input.off(Input.EventType.KEY_UP, this.handleKeyUp, this);
-        this.restartButton?.node.off(
+        this.restartButton?.node?.off(
             Button.EventType.CLICK,
             this.restartGame,
+            this,
+        );
+        this.backButton?.node?.off(
+            Button.EventType.CLICK,
+            this.backToLobby,
+            this,
+        );
+        this.gameOverLobbyButton?.node?.off(
+            Button.EventType.CLICK,
+            this.backToLobby,
             this,
         );
     }
 
     /** 场景退出：清空按键状态和程序化画布。 */
     protected onExit(): void {
+        this._transitionSerial += 1;
+        this._sceneTransitioning = false;
         this._pressedKeys.clear();
         this.renderer?.clear();
         super.onExit();
@@ -161,6 +204,9 @@ export class Game2048SceneController extends SceneBase {
 
     /** Cocos 生命周期：推进玩法并刷新一帧显示。 */
     protected update(deltaTime: number): void {
+        if (this._sceneTransitioning) {
+            return;
+        }
         this._world.update(deltaTime);
         const snapshot = this._world.getSnapshot();
         const shouldShowGameOver =
@@ -176,13 +222,67 @@ export class Game2048SceneController extends SceneBase {
 
     /** 重新建立世界并隐藏上一局结算界面。 */
     private restartGame(): void {
+        if (this._sceneTransitioning) {
+            return;
+        }
         this._restartSerial += 1;
         this._pressedKeys.clear();
+        this.setSceneButtonsInteractable(true);
         this.gameOverPanel!.active = false;
         const seed = 2048 + this._restartSerial * 7919;
         this._world.reset(seed);
         this._world.setPlayerDirection({ x: 0, y: 1 });
         this.renderer!.render(this._world.getSnapshot());
+    }
+
+    /** 返回大厅按钮回调，切换期间暂停世界并禁用全部场景按钮。 */
+    private backToLobby(): void {
+        if (this._sceneTransitioning) {
+            return;
+        }
+        this._sceneTransitioning = true;
+        this._pressedKeys.clear();
+        this.setSceneButtonsInteractable(false);
+        const requestSerial = ++this._transitionSerial;
+        this.runAsyncTask(
+            this.enterLobbyScene(requestSerial),
+            "从 2048 游戏返回大厅",
+        );
+    }
+
+    /** 加载大厅场景，失败时恢复本局交互并保留当前世界状态。 */
+    private async enterLobbyScene(requestSerial: number): Promise<void> {
+        const result = await SceneManager.load("Lobby");
+        if (result.status === "loaded") {
+            return;
+        }
+        if (
+            requestSerial !== this._transitionSerial ||
+            !isValid(this, true) ||
+            !isValid(this.node, true)
+        ) {
+            return;
+        }
+
+        this._sceneTransitioning = false;
+        this.setSceneButtonsInteractable(true);
+        Logger.error(
+            `2048 大厅场景加载失败：${result.reason ?? "unknown"}`,
+            result.error,
+        );
+    }
+
+    /** 同步设置游戏内、重新开始和结算返回按钮的可交互状态。 */
+    private setSceneButtonsInteractable(interactable: boolean): void {
+        if (this.restartButton) {
+            this.restartButton.interactable = interactable;
+        }
+        if (this.backButton) {
+            this.backButton.interactable = interactable;
+        }
+        if (this.gameOverLobbyButton) {
+            this.gameOverLobbyButton.interactable = interactable;
+        }
     }
 
     /** 把触摸位置转换为以画布中心为原点的玩家方向。 */
