@@ -1,0 +1,508 @@
+{
+  "schemaVersion": 1,
+  "module": {
+    "id": "game2048-demo",
+    "title": "2048 圆形竞技场 Demo",
+    "kind": "gameplay",
+    "phase": "test-ready"
+  },
+  "capabilities": {
+    "ui": true,
+    "api": false,
+    "list": false,
+    "persistence": false,
+    "analytics": false,
+    "time": false
+  },
+  "sources": [
+    {
+      "id": "requirement-chat",
+      "kind": "requirement",
+      "location": "chat://2048-arena-requirement",
+      "status": "approved"
+    },
+    {
+      "id": "design-reference",
+      "kind": "design",
+      "location": "https://zhangdianwei.github.io/#Game2048",
+      "status": "read"
+    },
+    {
+      "id": "project-rules",
+      "kind": "project",
+      "location": "local://AGENTS.md",
+      "status": "approved"
+    }
+  ],
+  "project": {
+    "creatorVersion": "3.8.4",
+    "designResolution": {
+      "width": 640,
+      "height": 1136
+    },
+    "orientation": "portrait"
+  },
+  "scope": {
+    "included": [
+      "圆形大地图与镜头跟随",
+      "玩家持续移动和触摸、鼠标、键盘方向控制",
+      "数字道具随机生成、直接收集、排序和 2048 合并",
+      "本地 AI 敌人移动、收集和角色碰撞",
+      "按角色首位数字比较的吞噬或相同数字合并",
+      "圆形边界限制、回推和蹭边动画",
+      "分数、排名、操作提示、失败和重新开始界面"
+    ],
+    "excluded": [
+      "联网真人玩家和服务器同步",
+      "账号、匹配、排行榜服务和持久化存档",
+      "正式美术、音效、商业化和数值平衡",
+      "参考游戏中与本 Demo 规则无关的完整产品功能"
+    ]
+  },
+  "decisions": [
+    {
+      "id": "decision-continuous-steering",
+      "statement": "角色持续向前移动，玩家通过触摸、鼠标或方向键只控制朝向，镜头跟随玩家。",
+      "confidence": "confirmed",
+      "impact": "behavior",
+      "sources": [
+        "requirement-chat",
+        "design-reference"
+      ]
+    },
+    {
+      "id": "decision-prop-direct-consume",
+      "statement": "地图数字道具与任何角色接触后都会被直接吃掉，不与角色比较大小。",
+      "confidence": "confirmed",
+      "impact": "behavior",
+      "sources": [
+        "requirement-chat"
+      ]
+    },
+    {
+      "id": "decision-segment-merge",
+      "statement": "吃到的数字进入角色数字队列；不同数字按从大到小排列，相同数字连续合并，直到不能继续合并。",
+      "confidence": "explicit",
+      "impact": "behavior",
+      "sources": [
+        "requirement-chat"
+      ]
+    },
+    {
+      "id": "decision-actor-collision",
+      "statement": "只有角色之间碰撞才比较首位数字；大数吞噬小数，相同数字由碰撞胜方吞噬并把双方数字队列重新排序合并。",
+      "confidence": "explicit",
+      "impact": "behavior",
+      "sources": [
+        "requirement-chat"
+      ]
+    },
+    {
+      "id": "decision-equal-collision-owner",
+      "statement": "Demo 中玩家与相同首位数字的 AI 相撞时玩家获胜；AI 之间相同数字相撞时由主动接近的一方获胜。",
+      "confidence": "inferred",
+      "impact": "behavior",
+      "sources": [
+        "requirement-chat"
+      ],
+      "reason": "用户已明确同值碰撞时玩家吃掉对方；AI 对 AI 的归属是 Demo 必需且可逆的本地规则。"
+    },
+    {
+      "id": "decision-boundary-response",
+      "statement": "角色不能越过圆形边界，触边时播放压缩和火花反馈，并把方向缓慢推回地图内部。",
+      "confidence": "confirmed",
+      "impact": "behavior",
+      "sources": [
+        "requirement-chat",
+        "design-reference"
+      ]
+    },
+    {
+      "id": "decision-procedural-visuals",
+      "statement": "Demo 使用 Graphics 和 Label 程序化绘制方形数字块、地图、网格和反馈，不引入临时图片资源。",
+      "confidence": "inferred",
+      "impact": "structure",
+      "sources": [
+        "project-rules",
+        "design-reference"
+      ],
+      "reason": "当前目标是先完成可玩 Demo，程序化 2D 图形可以保持资源结构干净并快速验证玩法。"
+    }
+  ],
+  "openQuestions": [],
+  "states": [
+    "initializing",
+    "playing",
+    "game-over"
+  ],
+  "transitions": [
+    {
+      "event": "world-ready",
+      "from": "initializing",
+      "to": "playing",
+      "authority": "client"
+    },
+    {
+      "event": "player-defeated",
+      "from": "playing",
+      "to": "game-over",
+      "authority": "client"
+    },
+    {
+      "event": "restart",
+      "from": "game-over",
+      "to": "playing",
+      "authority": "client"
+    }
+  ],
+  "architecture": {
+    "artifacts": [
+      {
+        "id": "game2048-world",
+        "role": "domain",
+        "responsibility": "维护道具、角色、AI、合并、吞噬、边界和可重复随机数的纯玩法状态。"
+      },
+      {
+        "id": "game2048-model",
+        "role": "model",
+        "responsibility": "定义世界快照、角色、数字段和玩法事件等类型。"
+      },
+      {
+        "id": "game2048-controller",
+        "role": "controller",
+        "responsibility": "绑定场景输入和重新开始操作，驱动世界更新并管理生命周期。"
+      },
+      {
+        "id": "game2048-view",
+        "role": "view",
+        "responsibility": "通过显式 Inspector 引用渲染竞技场、角色、道具、HUD、边界反馈和结算状态。"
+      },
+      {
+        "id": "game2048-config",
+        "role": "config",
+        "responsibility": "集中维护竞技场半径、速度、AI 数量、道具数量和颜色等可调参数。"
+      }
+    ]
+  },
+  "interfaces": [],
+  "ui": {
+    "screens": [
+      {
+        "id": "game2048-screen",
+        "kind": "scene",
+        "prefab": "Game2048"
+      }
+    ],
+    "lists": [],
+    "bindings": [
+      {
+        "name": "arenaGraphics",
+        "component": "Graphics",
+        "owner": "game2048-view",
+        "classification": "dynamic",
+        "source": "world arena and camera",
+        "required": true,
+        "reason": "绘制圆形地图、网格和边界。"
+      },
+      {
+        "name": "entityGraphics",
+        "component": "Graphics",
+        "owner": "game2048-view",
+        "classification": "dynamic",
+        "source": "world actors and props",
+        "required": true,
+        "reason": "每帧绘制数字道具和角色数字队列。"
+      },
+      {
+        "name": "effectGraphics",
+        "component": "Graphics",
+        "owner": "game2048-view",
+        "classification": "dynamic",
+        "source": "world effects",
+        "required": true,
+        "reason": "绘制吞噬、合并和触边反馈。"
+      },
+      {
+        "name": "scoreLabel",
+        "component": "Label",
+        "owner": "game2048-view",
+        "classification": "dynamic",
+        "source": "player score",
+        "required": true,
+        "reason": "显示当前收集和吞噬分数。"
+      },
+      {
+        "name": "rankLabel",
+        "component": "Label",
+        "owner": "game2048-view",
+        "classification": "dynamic",
+        "source": "actor ranking",
+        "required": true,
+        "reason": "显示玩家当前排名和首位数字。"
+      },
+      {
+        "name": "hintLabel",
+        "component": "Label",
+        "owner": "game2048-view",
+        "classification": "fixed",
+        "source": "demo operation copy",
+        "required": true,
+        "reason": "说明触摸、鼠标和键盘方向控制。"
+      },
+      {
+        "name": "gameOverPanel",
+        "component": "Node",
+        "owner": "game2048-controller",
+        "classification": "dynamic",
+        "source": "module game-over state",
+        "required": true,
+        "reason": "玩家被吞噬后显示结算遮罩。"
+      },
+      {
+        "name": "restartButton",
+        "component": "Button",
+        "owner": "game2048-controller",
+        "classification": "interactive",
+        "source": "restart action",
+        "required": true,
+        "reason": "允许重新开始完整玩法循环。"
+      }
+    ],
+    "actions": [
+      {
+        "id": "change-direction",
+        "owner": "game2048-controller",
+        "trigger": "touch-move, mouse-move or keyboard",
+        "handler": "Game2048SceneController.updatePlayerDirection"
+      },
+      {
+        "id": "restart-game",
+        "owner": "game2048-controller",
+        "trigger": "click",
+        "handler": "Game2048SceneController.restartGame"
+      }
+    ],
+    "visualStates": [
+      {
+        "id": "playing-state",
+        "owner": "game2048-view",
+        "description": "显示圆形竞技场、数字道具、角色队列、HUD 和移动提示。"
+      },
+      {
+        "id": "boundary-scrape-state",
+        "owner": "game2048-view",
+        "description": "角色触碰圆形边界时显示压缩、边界高亮和火花。"
+      },
+      {
+        "id": "game-over-state",
+        "owner": "game2048-screen",
+        "description": "显示玩家最终数字、分数和重新开始按钮。"
+      }
+    ]
+  },
+  "acceptance": {
+    "cases": [
+      {
+        "id": "case-player-steering",
+        "title": "玩家持续移动且触摸、鼠标和键盘可以改变方向",
+        "status": "passed",
+        "sources": [
+          "requirement-chat",
+          "design-reference"
+        ]
+      },
+      {
+        "id": "case-prop-consume",
+        "title": "角色可直接吃掉任意数字道具并完成排序和连续合并",
+        "status": "passed",
+        "sources": [
+          "requirement-chat"
+        ]
+      },
+      {
+        "id": "case-actor-collision",
+        "title": "角色相撞时按首位数字完成大吃小或相同数字合并",
+        "status": "passed",
+        "sources": [
+          "requirement-chat"
+        ]
+      },
+      {
+        "id": "case-ai",
+        "title": "AI 能自主寻找道具、避让强敌并参与吞噬",
+        "status": "passed",
+        "sources": [
+          "requirement-chat"
+        ]
+      },
+      {
+        "id": "case-boundary",
+        "title": "玩家不能越过圆形边界并获得回推和蹭边动画反馈",
+        "status": "passed",
+        "sources": [
+          "requirement-chat"
+        ]
+      },
+      {
+        "id": "case-restart",
+        "title": "玩家失败后可重新开始且输入和计时不会重复注册",
+        "status": "passed",
+        "sources": [
+          "requirement-chat",
+          "project-rules"
+        ]
+      }
+    ],
+    "gates": [
+      {
+        "id": "contract",
+        "status": "passed"
+      },
+      {
+        "id": "static",
+        "status": "passed"
+      },
+      {
+        "id": "creator-import",
+        "status": "passed"
+      },
+      {
+        "id": "visual",
+        "status": "passed"
+      },
+      {
+        "id": "functional-smoke",
+        "status": "passed"
+      },
+      {
+        "id": "functional",
+        "status": "passed"
+      },
+      {
+        "id": "api",
+        "status": "passed"
+      },
+      {
+        "id": "lifecycle",
+        "status": "passed"
+      },
+      {
+        "id": "regression",
+        "status": "passed"
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "gate": "contract",
+      "type": "manual",
+      "result": "已结合用户确认规则、参考玩法实际体验和项目 AGENTS.md 完成范围、行为与绑定契约。",
+      "reference": "manual://game2048-demo/contract-review"
+    },
+    {
+      "gate": "static",
+      "type": "automation",
+      "result": "tsc --noEmit、28 个核心框架用例、10 个玩法领域用例和 Cocos 资源清单校验全部通过。",
+      "reference": "command://npm-run-verify"
+    },
+    {
+      "gate": "creator-import",
+      "type": "manual",
+      "result": "Cocos Creator 3.8.4 已重新导入 Game2048 场景与脚本；Scene Meta 为 imported，最终导入日志无新增错误或警告。",
+      "reference": "creator://3.8.4/assets-scene-game2048"
+    },
+    {
+      "gate": "visual",
+      "type": "manual",
+      "result": "已在 640 x 1136 设计分辨率预览中检查圆形地图、数字配色、方形队首、出生护盾、结算遮罩与按钮。",
+      "reference": "preview://127.0.0.1:7456/game2048-visual"
+    },
+    {
+      "gate": "functional-smoke",
+      "type": "manual",
+      "result": "实际预览确认 Boot 会自动进入玩法，并完成出生、持续移动、鼠标转向、键盘输入、道具收集、从 2 连续合并到 16、失败和重新开始流程，控制台零错误警告。",
+      "reference": "preview://127.0.0.1:7456/game2048-smoke"
+    },
+    {
+      "gate": "functional",
+      "type": "automation",
+      "result": "10 个领域用例覆盖连续合并、直接吃道具、首位比较、同值归属、玩家失败、AI 安全出生、出生保护和圆形边界回推。",
+      "reference": "command://npm-run-verify-game2048"
+    },
+    {
+      "gate": "api",
+      "type": "manual",
+      "result": "本 Demo 明确为纯客户端本地玩法，不包含远端接口与持久化。",
+      "reference": "manual://game2048-demo/no-api"
+    },
+    {
+      "gate": "lifecycle",
+      "type": "manual",
+      "result": "输入和按钮监听具有成对注册/注销及幂等保护；实际预览重复开始后响应正常且控制台无重复监听错误。",
+      "reference": "preview://127.0.0.1:7456/game2048-restart"
+    },
+    {
+      "gate": "regression",
+      "type": "automation",
+      "result": "全量 npm run verify 通过，原有核心框架 28 个用例保持通过。",
+      "reference": "command://npm-run-verify-regression"
+    }
+  ],
+  "deliverables": [
+    {
+      "kind": "model",
+      "path": "assets/app/game/game2048/Game2048Model.ts",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "domain",
+      "path": "assets/app/game/game2048/Game2048World.ts",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "controller",
+      "path": "assets/app/scenes/Game2048SceneController.ts",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "view",
+      "path": "assets/app/ui/game/Game2048Renderer.ts",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "scene",
+      "path": "assets/scene/Game2048.scene",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "generator",
+      "path": "tools/cocos-modules/game2048-demo/generate-game2048-scene.mjs",
+      "requiredFor": [
+        "runnable",
+        "test"
+      ]
+    },
+    {
+      "kind": "test",
+      "path": "tools/cocos-modules/game2048-demo/test-game2048-world.mjs",
+      "requiredFor": [
+        "test"
+      ]
+    }
+  ]
+}

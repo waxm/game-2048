@@ -4,8 +4,9 @@
     "scripts": {
         "typecheck": "tsc --noEmit",
         "verify:core": "node tools/verify-core-managers.mjs",
+        "verify:game2048": "node tools/cocos-modules/game2048-demo/test-game2048-world.mjs",
         "validate:cocos": "node tools/validate-cocos-assets.mjs",
-        "verify": "npm run typecheck && npm run verify:core && npm run validate:cocos"
+        "verify": "npm run typecheck && npm run verify:core && npm run verify:game2048 && npm run validate:cocos"
     },
     "creator": {
         "version": "3.8.4"

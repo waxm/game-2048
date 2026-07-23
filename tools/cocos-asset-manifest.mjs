@@ -17,4 +17,55 @@ export const cocosAssetManifest = [
     ],
     checks: ["noCanvasAudio"],
   },
+  {
+    kind: "scene",
+    assetPath: "assets/scene/Game2048.scene",
+    scripts: [
+      {
+        className: "Game2048SceneController",
+        sourcePath: "assets/app/scenes/Game2048SceneController.ts",
+        hostNodeName: "Canvas",
+        objectBindings: {
+          renderer: {
+            type: "5ffefxOgIJLNZ28nq71g3Rw",
+            nodeName: "GameView",
+          },
+          inputSurface: { type: "cc.Node", nodeName: "Canvas" },
+          gameOverPanel: { type: "cc.Node", nodeName: "GameOverPanel" },
+          restartButton: { type: "cc.Button", nodeName: "RestartButton" },
+        },
+      },
+      {
+        className: "Game2048Renderer",
+        sourcePath: "assets/app/ui/game/Game2048Renderer.ts",
+        hostNodeName: "GameView",
+        objectBindings: {
+          arenaGraphics: {
+            type: "cc.Graphics",
+            nodeName: "ArenaGraphics",
+          },
+          entityGraphics: {
+            type: "cc.Graphics",
+            nodeName: "EntityGraphics",
+          },
+          effectGraphics: {
+            type: "cc.Graphics",
+            nodeName: "EffectGraphics",
+          },
+          overlayGraphics: {
+            type: "cc.Graphics",
+            nodeName: "GameOverPanel",
+          },
+          scoreLabel: { type: "cc.Label", nodeName: "ScoreLabel" },
+          rankLabel: { type: "cc.Label", nodeName: "RankLabel" },
+          hintLabel: { type: "cc.Label", nodeName: "HintLabel" },
+          finalResultLabel: {
+            type: "cc.Label",
+            nodeName: "FinalResultLabel",
+          },
+        },
+      },
+    ],
+    checks: ["noCanvasAudio"],
+  },
 ];
