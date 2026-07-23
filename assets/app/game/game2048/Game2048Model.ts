@@ -196,6 +196,15 @@ export interface Game2048Config {
     /** 数字段中心之间的跟随距离。 */
     trailSpacing: number;
 
+    /** 队首历史轨迹相邻采样点的最大距离。 */
+    trailSampleSpacing: number;
+
+    /** 尾部数字追向历史轨迹目标所需的平滑时间。 */
+    tailFollowSmoothTime: number;
+
+    /** 新吞噬数字从碰撞点向队尾目标距离展开的速度。 */
+    tailJoinSpeed: number;
+
     /** 角色中心与边界保持的安全距离。 */
     boundaryInset: number;
 
@@ -223,6 +232,9 @@ export const DEFAULT_GAME2048_CONFIG: Readonly<Game2048Config> = {
     botSpeed: 132,
     turnSpeed: 5.8,
     trailSpacing: 42,
+    trailSampleSpacing: 4,
+    tailFollowSmoothTime: 0.1,
+    tailJoinSpeed: 7.5,
     boundaryInset: 27,
     botRespawnDelay: 2.4,
     playerSpawnProtectionDuration: 4,

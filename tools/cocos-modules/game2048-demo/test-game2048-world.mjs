@@ -96,6 +96,8 @@ function overlapActors(left, right) {
   right.targetDirection = { ...right.direction };
   left.trail = [{ x: 0, y: 0 }, { x: 0, y: -20 }];
   right.trail = [{ x: 0, y: 0 }, { x: 0, y: 20 }];
+  left.trailAnchor = { x: 0, y: 0 };
+  right.trailAnchor = { x: 0, y: 0 };
 }
 
 test("相同数字可以连续进位，不同数字保持从大到小", () => {
@@ -167,6 +169,137 @@ test("任意地图数字都会被直接吃掉并进入排序合并队列", () =>
   });
   world.update(0.001);
   assert.deepEqual(player.segments, [16]);
+  assert.equal(
+    world.getSnapshot().actors.find((actor) => actor.id === "player")
+      .segmentPositions.length,
+    1,
+  );
+});
+
+test("新吞噬的数字从碰撞位置接入尾巴而不是瞬移到固定槽位", () => {
+  const world = new Game2048World({ botCount: 0, propTargetCount: 0 });
+  world.reset(11);
+  const player = playerOf(world);
+  const pickupPosition = { ...player.position };
+  world._props.push({
+    id: 1101,
+    value: 8,
+    position: pickupPosition,
+    phase: 0,
+  });
+
+  world.update(0.001);
+  const snapshotPlayer = world
+    .getSnapshot()
+    .actors.find((actor) => actor.id === "player");
+  const [headPosition, tailPosition] = snapshotPlayer.segmentPositions;
+  assert.equal(snapshotPlayer.segmentPositions.length, 2);
+  assert.ok(
+    Math.hypot(
+      tailPosition.x - pickupPosition.x,
+      tailPosition.y - pickupPosition.y,
+    ) < 1,
+  );
+  assert.ok(
+    Math.hypot(
+      tailPosition.x - headPosition.x,
+      tailPosition.y - headPosition.y,
+    ) <
+      world.config.trailSpacing * 0.2,
+  );
+});
+
+test("尾部数字会逐渐拉开并沿队首的旧路线完成转弯", () => {
+  const world = new Game2048World({
+    botCount: 0,
+    propTargetCount: 0,
+    playerSpeed: 160,
+  });
+  world.reset(12);
+  const player = playerOf(world);
+  world._props.push({
+    id: 1201,
+    value: 8,
+    position: { ...player.position },
+    phase: 0,
+  });
+  world.update(0.001);
+
+  for (let index = 0; index < 45; index += 1) {
+    world.update(1 / 60);
+  }
+  const settledFollower = player.tailFollowers[0];
+  assert.ok(
+    Math.abs(settledFollower.pathDistance - world.config.trailSpacing) < 0.5,
+  );
+
+  world.setPlayerDirection({ x: 1, y: 0 });
+  for (let index = 0; index < 9; index += 1) {
+    world.update(1 / 60);
+  }
+  const [headPosition, tailPosition] = world
+    .getSnapshot()
+    .actors.find((actor) => actor.id === "player").segmentPositions;
+  const gap = Math.hypot(
+    headPosition.x - tailPosition.x,
+    headPosition.y - tailPosition.y,
+  );
+  assert.ok(
+    gap > world.config.trailSpacing * 0.72,
+    `尾部间距过小：${gap}`,
+  );
+  assert.ok(
+    gap < world.config.trailSpacing * 1.4,
+    `尾部间距过大：${gap}`,
+  );
+  assert.ok(tailPosition.x < headPosition.x);
+  assert.ok(tailPosition.y < headPosition.y);
+});
+
+test("尾巴跟随在常见帧率下保持近似一致", () => {
+  /** 以指定帧间隔运行相同的直行和转向路径。 */
+  function runScenario(frameTime) {
+    const world = new Game2048World({
+      botCount: 0,
+      propTargetCount: 0,
+      playerSpeed: 170,
+    });
+    world.reset(13);
+    const player = playerOf(world);
+    world._props.push({
+      id: 1301,
+      value: 8,
+      position: { ...player.position },
+      phase: 0,
+    });
+    world.update(0.001);
+
+    let elapsed = 0;
+    while (elapsed < 1.2 - 0.0001) {
+      if (elapsed >= 0.6) {
+        world.setPlayerDirection({ x: 1, y: 0 });
+      }
+      const step = Math.min(frameTime, 1.2 - elapsed);
+      world.update(step);
+      elapsed += step;
+    }
+    return world
+      .getSnapshot()
+      .actors.find((actor) => actor.id === "player").segmentPositions;
+  }
+
+  const sixtyFpsPositions = runScenario(1 / 60);
+  const thirtyFpsPositions = runScenario(1 / 30);
+  for (let index = 0; index < sixtyFpsPositions.length; index += 1) {
+    const positionDifference = Math.hypot(
+      sixtyFpsPositions[index].x - thirtyFpsPositions[index].x,
+      sixtyFpsPositions[index].y - thirtyFpsPositions[index].y,
+    );
+    assert.ok(
+      positionDifference < 5,
+      `第 ${index} 节在不同帧率下偏差过大：${positionDifference}`,
+    );
+  }
 });
 
 test("角色碰撞时大队首吞噬小队首", () => {

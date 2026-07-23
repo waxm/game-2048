@@ -56,6 +56,12 @@ interface MutableActor {
     /** 记录队首历史位置的轨迹。 */
     trail: Game2048Point[];
 
+    /** 最近一次按固定间隔写入轨迹的空间锚点。 */
+    trailAnchor: Game2048Point;
+
+    /** 每个队尾数字独立维护的弹性跟随状态。 */
+    tailFollowers: MutableTailFollower[];
+
     /** 累计分数。 */
     score: number;
 
@@ -70,6 +76,18 @@ interface MutableActor {
 
     /** 触边动画强度。 */
     boundaryEffect: number;
+}
+
+/** 单个队尾数字沿历史轨迹追随时的运行状态。 */
+interface MutableTailFollower {
+    /** 当前世界坐标。 */
+    position: Game2048Point;
+
+    /** 平滑阻尼使用的当前速度。 */
+    velocity: Game2048Point;
+
+    /** 当前在队首历史轨迹上展开到的距离。 */
+    pathDistance: number;
 }
 
 /** 领域层内部维护的短暂特效。 */
@@ -378,6 +396,8 @@ export class Game2048World {
             targetDirection: normalizedDirection,
             segments: [2],
             trail: this.createInitialTrail(position, normalizedDirection),
+            trailAnchor: clonePoint(position),
+            tailFollowers: [],
             score: 0,
             speedScale: 1,
             aiThinkTimer: this.randomRange(0.08, 0.26),
@@ -386,16 +406,19 @@ export class Game2048World {
         };
     }
 
-    /** 在角色身后建立初始轨迹，保证新增尾部数字不会全部重叠。 */
+    /** 在角色身后建立足够长的初始轨迹，为首次吞噬预留自然展开空间。 */
     private createInitialTrail(
         position: Game2048Point,
         direction: Game2048Point,
     ): Game2048Point[] {
         const trail: Game2048Point[] = [];
-        for (let index = 0; index < 12; index += 1) {
+        const initialTrailLength = this.config.trailSpacing * 12 + 160;
+        const sampleSpacing = Math.max(1, this.config.trailSampleSpacing);
+        const sampleCount = Math.ceil(initialTrailLength / sampleSpacing);
+        for (let index = 0; index <= sampleCount; index += 1) {
             trail.push({
-                x: position.x - direction.x * index * 12,
-                y: position.y - direction.y * index * 12,
+                x: position.x - direction.x * index * sampleSpacing,
+                y: position.y - direction.y * index * sampleSpacing,
             });
         }
         return trail;
@@ -450,19 +473,58 @@ export class Game2048World {
         }
 
         this.recordTrail(actor);
+        this.syncTailFollowers(actor, actor.position);
+        this.updateTailFollowers(actor, deltaTime);
     }
 
-    /** 按移动距离记录队首轨迹并裁剪不再使用的尾部。 */
+    /** 按固定空间间隔记录队首轨迹并裁剪不再使用的尾部。 */
     private recordTrail(actor: MutableActor): void {
-        const newestPoint = actor.trail[0];
-        if (!newestPoint || distanceBetween(newestPoint, actor.position) >= 7) {
-            actor.trail.unshift(clonePoint(actor.position));
-        } else {
-            actor.trail[0] = clonePoint(actor.position);
+        const sampleSpacing = Math.max(1, this.config.trailSampleSpacing);
+        const movedFromAnchor = distanceBetween(
+            actor.trailAnchor,
+            actor.position,
+        );
+        const previousHistory = actor.trail.slice(1);
+        if (
+            !previousHistory[0] ||
+            distanceBetween(previousHistory[0], actor.trailAnchor) >
+                sampleSpacing * 0.1
+        ) {
+            previousHistory.unshift(clonePoint(actor.trailAnchor));
         }
 
+        const insertedSamples: Game2048Point[] = [];
+        if (movedFromAnchor >= sampleSpacing) {
+            const movementDirection = normalizePoint(
+                subtractPoint(actor.position, actor.trailAnchor),
+            );
+            for (
+                let sampleDistance = sampleSpacing;
+                sampleDistance <= movedFromAnchor;
+                sampleDistance += sampleSpacing
+            ) {
+                insertedSamples.push(
+                    addPoint(
+                        actor.trailAnchor,
+                        scalePoint(movementDirection, sampleDistance),
+                    ),
+                );
+            }
+            actor.trailAnchor = clonePoint(
+                insertedSamples[insertedSamples.length - 1],
+            );
+        }
+        actor.trail = [
+            clonePoint(actor.position),
+            ...insertedSamples.reverse(),
+            ...previousHistory,
+        ];
+
+        // 多保留十二节潜在尾巴的历史，连续吞噬时新数字也能沿旧路线展开。
         const requiredLength =
-            Math.max(1, actor.segments.length) * this.config.trailSpacing + 160;
+            (Math.max(1, actor.segments.length) + 12) *
+                this.config.trailSpacing +
+            160;
         let accumulatedLength = 0;
         let keepCount = actor.trail.length;
         for (let index = 1; index < actor.trail.length; index += 1) {
@@ -477,6 +539,80 @@ export class Game2048World {
         }
         if (actor.trail.length > keepCount) {
             actor.trail.length = keepCount;
+        }
+    }
+
+    /**
+     * 让尾部状态数量与数字队列保持一致。
+     *
+     * 新数字从实际碰撞位置进入，而不是瞬间出现在固定队尾槽位；
+     * 连锁合并缩短队列时则从最末端回收多余状态。
+     */
+    private syncTailFollowers(
+        actor: MutableActor,
+        joinPosition: Game2048Point,
+    ): void {
+        const requiredFollowerCount = Math.max(0, actor.segments.length - 1);
+        if (actor.tailFollowers.length > requiredFollowerCount) {
+            actor.tailFollowers.length = requiredFollowerCount;
+        }
+        while (actor.tailFollowers.length < requiredFollowerCount) {
+            actor.tailFollowers.push({
+                position: clonePoint(joinPosition),
+                velocity: { x: 0, y: 0 },
+                pathDistance: 0,
+            });
+        }
+    }
+
+    /**
+     * 以历史轨迹为目标推进每一节尾巴。
+     *
+     * pathDistance 负责把新数字从碰撞点逐渐展开到目标间距，平滑阻尼负责
+     * 吸收折线路径的生硬拐角；越靠后的数字响应略慢，形成连续而非刚性的尾巴。
+     */
+    private updateTailFollowers(
+        actor: MutableActor,
+        deltaTime: number,
+    ): void {
+        const joinRatio =
+            1 - Math.exp(-this.config.tailJoinSpeed * deltaTime);
+        for (
+            let followerIndex = 0;
+            followerIndex < actor.tailFollowers.length;
+            followerIndex += 1
+        ) {
+            const follower = actor.tailFollowers[followerIndex];
+            const targetDistance =
+                (followerIndex + 1) * this.config.trailSpacing;
+            follower.pathDistance = lerp(
+                follower.pathDistance,
+                targetDistance,
+                joinRatio,
+            );
+            if (
+                targetDistance - follower.pathDistance <
+                this.config.trailSampleSpacing * 0.2
+            ) {
+                follower.pathDistance = targetDistance;
+            }
+
+            const targetPosition = this.sampleTrail(
+                actor.trail,
+                follower.pathDistance,
+            );
+            const smoothTime =
+                this.config.tailFollowSmoothTime *
+                (1 + Math.min(followerIndex, 8) * 0.055);
+            const nextState = smoothDampPoint(
+                follower.position,
+                targetPosition,
+                follower.velocity,
+                smoothTime,
+                deltaTime,
+            );
+            follower.position = nextState.position;
+            follower.velocity = nextState.velocity;
         }
     }
 
@@ -712,6 +848,7 @@ export class Game2048World {
         const beforeLength = actor.segments.length + values.length;
         const beforeHead = actor.segments[0] ?? 2;
         actor.segments = merge2048Values([...actor.segments, ...values]);
+        this.syncTailFollowers(actor, effectPosition);
         if (
             actor.segments.length < beforeLength ||
             (actor.segments[0] ?? 2) > beforeHead
@@ -757,6 +894,8 @@ export class Game2048World {
                 actor.position,
                 actor.direction,
             );
+            actor.trailAnchor = clonePoint(actor.position);
+            actor.tailFollowers.length = 0;
             actor.score = Math.floor(actor.score * 0.35);
             actor.boundaryEffect = 0;
             actor.aiThinkTimer = this.randomRange(0.05, 0.2);
@@ -834,14 +973,14 @@ export class Game2048World {
         };
     }
 
-    /** 沿队首历史轨迹采样每个数字块的位置。 */
+    /** 返回队首和各个弹性尾块的当前世界坐标。 */
     private getSegmentPositions(actor: MutableActor): Game2048Point[] {
-        const result: Game2048Point[] = [clonePoint(actor.position)];
-        for (let segmentIndex = 1; segmentIndex < actor.segments.length; segmentIndex += 1) {
-            const targetDistance = segmentIndex * this.config.trailSpacing;
-            result.push(this.sampleTrail(actor.trail, targetDistance));
-        }
-        return result;
+        return [
+            clonePoint(actor.position),
+            ...actor.tailFollowers.map((follower) =>
+                clonePoint(follower.position),
+            ),
+        ];
     }
 
     /** 沿折线轨迹取出指定距离处的插值坐标。 */
@@ -1043,4 +1182,56 @@ function rotatePoint(point: Game2048Point, radians: number): Game2048Point {
 /** 对两个数字执行线性插值。 */
 function lerp(start: number, end: number, ratio: number): number {
     return start + (end - start) * ratio;
+}
+
+/** 平滑阻尼计算结果。 */
+interface SmoothDampPointResult {
+    /** 下一帧坐标。 */
+    position: Game2048Point;
+
+    /** 下一帧速度。 */
+    velocity: Game2048Point;
+}
+
+/**
+ * 使用临界阻尼把坐标平滑推向目标。
+ *
+ * 该离散公式在不同帧率下保持稳定，并避免简单线性插值在急转弯时产生
+ * 明显顿挫或因大时间步发生过冲。
+ */
+function smoothDampPoint(
+    current: Game2048Point,
+    target: Game2048Point,
+    velocity: Game2048Point,
+    smoothTime: number,
+    deltaTime: number,
+): SmoothDampPointResult {
+    const safeSmoothTime = Math.max(0.0001, smoothTime);
+    const angularFrequency = 2 / safeSmoothTime;
+    const scaledTime = angularFrequency * deltaTime;
+    const decay =
+        1 /
+        (1 +
+            scaledTime +
+            0.48 * scaledTime * scaledTime +
+            0.235 * scaledTime * scaledTime * scaledTime);
+
+    const change = subtractPoint(current, target);
+    const temporary = scalePoint(
+        addPoint(velocity, scalePoint(change, angularFrequency)),
+        deltaTime,
+    );
+    return {
+        position: addPoint(
+            target,
+            scalePoint(addPoint(change, temporary), decay),
+        ),
+        velocity: scalePoint(
+            subtractPoint(
+                velocity,
+                scalePoint(temporary, angularFrequency),
+            ),
+            decay,
+        ),
+    };
 }
