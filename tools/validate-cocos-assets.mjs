@@ -310,6 +310,9 @@ function validateSerializedAsset(
   validateReferenceRange(objects, assetPath);
   validateNodeRelations(objects, assetPath);
   validateSerializedUuids(objects, assetPath, localUuidIndex);
+  if (kind === "scene") {
+    validateSceneGlobals(objects, assetPath);
+  }
 
   const scriptResults = scripts.map((scriptConfig) =>
     validateSerializedScript(
@@ -335,6 +338,52 @@ function validateSerializedAsset(
       0,
     ),
   };
+}
+
+/**
+ * 校验 SceneGlobals 的八个依赖类型。
+ *
+ * 仅校验 __id__ 范围无法发现全局引用误指向业务节点的问题；这里显式检查类型，
+ * 防止场景能通过静态引用检查却在激活 skybox 时崩溃。
+ */
+function validateSceneGlobals(objects, assetPath) {
+  const sceneGlobalsEntries = objects
+    .map((object, objectId) => ({ object, objectId }))
+    .filter(({ object }) => object?.__type__ === "cc.SceneGlobals");
+  if (sceneGlobalsEntries.length !== 1) {
+    throw new Error(
+      `${assetPath} 必须有且只有一个 cc.SceneGlobals，当前数量为 ${sceneGlobalsEntries.length}。`,
+    );
+  }
+
+  const [{ object: sceneGlobals, objectId: sceneGlobalsId }] =
+    sceneGlobalsEntries;
+  const expectedBindings = {
+    ambient: "cc.AmbientInfo",
+    shadows: "cc.ShadowsInfo",
+    _skybox: "cc.SkyboxInfo",
+    fog: "cc.FogInfo",
+    octree: "cc.OctreeInfo",
+    skin: "cc.SkinInfo",
+    lightProbeInfo: "cc.LightProbeInfo",
+    postSettings: "cc.PostSettingsInfo",
+  };
+  for (const [field, expectedType] of Object.entries(expectedBindings)) {
+    const target = objects[sceneGlobals[field]?.__id__];
+    if (target?.__type__ !== expectedType) {
+      throw new Error(
+        `${assetPath} 的 SceneGlobals.${field} 未绑定到 ${expectedType}。`,
+      );
+    }
+  }
+
+  const scenes = objects.filter((object) => object?.__type__ === "cc.Scene");
+  if (
+    scenes.length !== 1 ||
+    scenes[0]._globals?.__id__ !== sceneGlobalsId
+  ) {
+    throw new Error(`${assetPath} 的 cc.Scene 没有绑定唯一 SceneGlobals。`);
+  }
 }
 
 /** 校验 Scene/Prefab 自身的 Meta 状态和主资源 UUID。 */
