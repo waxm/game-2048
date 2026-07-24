@@ -4,7 +4,7 @@
     "id": "game2048-demo",
     "title": "2048 圆形竞技场 Demo",
     "kind": "gameplay",
-    "phase": "validating"
+    "phase": "test-ready"
   },
   "capabilities": {
     "ui": true,
@@ -34,6 +34,12 @@
       "status": "approved"
     },
     {
+      "id": "requirement-head-body-actor-collision",
+      "kind": "requirement",
+      "location": "chat://2048-head-body-actor-collision",
+      "status": "approved"
+    },
+    {
       "id": "design-reference",
       "kind": "design",
       "location": "https://zhangdianwei.github.io/#Game2048",
@@ -59,9 +65,9 @@
       "圆形大地图与镜头跟随",
       "玩家持续移动和触摸、鼠标、键盘方向控制",
       "数字道具随机生成、直接收集、排序和 2048 合并",
-      "吞噬后的数字从碰撞位置接入并沿队首历史轨迹弹性跟随",
+      "地图数字从碰撞位置接入尾巴，角色吞噬后从胜方头部重新排列整条身体",
       "本地 AI 敌人移动、收集和角色碰撞",
-      "按角色首位数字比较的吞噬或相同数字合并",
+      "任一角色头部碰到另一角色头部或身体时按双方首位数字比较吞噬关系",
       "圆形边界限制、回推和蹭边动画",
       "分数、排名、操作提示、失败和重新开始界面",
       "启动、2048 大厅、游戏三个独立场景及完整往返流程",
@@ -105,7 +111,7 @@
     },
     {
       "id": "decision-tail-follow",
-      "statement": "吞噬后新增的数字从实际碰撞位置接入尾巴，逐渐拉开到目标间距，并通过独立平滑状态沿队首连续历史轨迹跟随；不能瞬移到固定槽位。",
+      "statement": "收集单个地图数字时，新数字从实际碰撞位置接入尾巴，逐渐拉开到目标间距，并通过独立平滑状态沿队首连续历史轨迹跟随。",
       "confidence": "explicit",
       "impact": "behavior",
       "sources": [
@@ -113,12 +119,22 @@
       ]
     },
     {
+      "id": "decision-actor-tail-reflow",
+      "statement": "任一角色头部碰到另一角色的头部或身体块都会进入结算，身体与身体单独重叠不结算；胜方始终按双方头部数字确定，吞噬后先合并排序全部数字，再从胜方头部沿其历史轨迹重新计算整条身体。",
+      "confidence": "confirmed",
+      "impact": "behavior",
+      "sources": [
+        "requirement-head-body-actor-collision"
+      ]
+    },
+    {
       "id": "decision-actor-collision",
-      "statement": "只有角色之间碰撞才比较首位数字；大数吞噬小数，相同数字由碰撞胜方吞噬并把双方数字队列重新排序合并。",
+      "statement": "任一角色头部碰到对方任意数字块时比较双方首位数字；大数吞噬小数，相同数字由碰撞胜方吞噬并把双方数字队列重新排序合并。",
       "confidence": "explicit",
       "impact": "behavior",
       "sources": [
-        "requirement-chat"
+        "requirement-chat",
+        "requirement-head-body-actor-collision"
       ]
     },
     {
@@ -550,18 +566,27 @@
       },
       {
         "id": "case-tail-follow",
-        "title": "新吞噬数字从碰撞位置接入，逐步形成沿真实移动轨迹弹性跟随的尾巴，并在常见帧率下保持一致",
+        "title": "新收集的地图数字从碰撞位置接入，逐步形成沿真实移动轨迹弹性跟随的尾巴，并在常见帧率下保持一致",
         "status": "passed",
         "sources": [
           "requirement-tail-follow"
         ]
       },
-      {
-        "id": "case-actor-collision",
-        "title": "角色相撞时按首位数字完成大吃小或相同数字合并",
-        "status": "passed",
-        "sources": [
-          "requirement-chat"
+    {
+      "id": "case-actor-tail-reflow",
+      "title": "头撞头或头撞身体会比较双方头部数值，身体互撞不结算，胜方吞噬长身体后仍从头部无重叠地排列完整数字队列",
+      "status": "passed",
+      "sources": [
+        "requirement-head-body-actor-collision"
+      ]
+    },
+    {
+      "id": "case-actor-collision",
+      "title": "角色头碰到对方任意数字块时按首位数字完成大吃小或相同数字合并",
+      "status": "passed",
+      "sources": [
+        "requirement-chat",
+        "requirement-head-body-actor-collision"
         ]
       },
       {
@@ -632,11 +657,11 @@
       },
       {
         "id": "visual",
-        "status": "unverified"
+        "status": "passed"
       },
       {
         "id": "functional-smoke",
-        "status": "unverified"
+        "status": "passed"
       },
       {
         "id": "functional",
@@ -666,31 +691,31 @@
     {
       "gate": "static",
       "type": "automation",
-      "result": "npm run verify 全部通过：TypeScript、28 个核心用例、13 个玩法用例，以及 3 个场景、6 个脚本和 26 个必填绑定校验。",
+      "result": "npm run verify 全部通过：TypeScript、28 个核心用例、17 个玩法用例，以及 3 个场景、6 个脚本和 26 个必填绑定校验。",
       "reference": "command://npm-run-verify"
     },
     {
       "gate": "creator-import",
       "type": "creator",
-      "result": "Cocos Creator 3.8.4 已于 17:21–17:22 重新导入并完成 Game2048Model、Game2048World 的 editor/preview 编译；最新日志无缺失类、反序列化或 UUID 错误。",
-      "reference": "creator://3.8.4/tail-follow-import"
+      "result": "Cocos Creator 3.8.4 已于 2026-07-24 10:08 重新导入并完成 Game2048World 的 editor/preview 编译；最新日志无缺失类、反序列化或 UUID 错误。",
+      "reference": "creator://3.8.4/head-body-actor-collision-import"
     },
     {
       "gate": "visual",
       "type": "visual",
-      "result": "本轮未修改 UI；尾巴的碰撞接入、拉开和转弯动态尚未在 640 x 1136 实际预览中完成视觉复核。",
-      "reference": "unverified://127.0.0.1:7456/tail-follow-visual"
+      "result": "已在 640 x 1136 实际预览中检查大厅、游戏、失败弹窗和重开后的主要画面，位置、层级、遮挡与文本显示正常。",
+      "reference": "browser://127.0.0.1:7456/game2048-portrait-preview"
     },
     {
       "gate": "functional-smoke",
       "type": "manual",
-      "result": "Creator 预览服务可访问且脚本已热更新，但自动化浏览器未能接管本地地址栏；本轮尾巴动态的实际操作冒烟验证未完成。",
-      "reference": "unverified://127.0.0.1:7456/tail-follow-smoke"
+      "result": "实际完成大厅开始游戏、方向操作、进入失败结算和重新开始，运行过程中页面控制台无警告或错误；精确碰撞边界由 17 个领域用例覆盖。",
+      "reference": "browser://127.0.0.1:7456/game2048-functional-smoke"
     },
     {
       "gate": "functional",
       "type": "automation",
-      "result": "13 个领域用例覆盖连续合并、直接吃道具、吞噬位置接入、轨迹弹性跟随、帧率一致性、首位比较、同值归属、玩家失败、AI 安全出生、出生保护和圆形边界回推。",
+      "result": "17 个领域用例覆盖连续合并、直接吃道具、轨迹弹性跟随、帧率一致性、双方头碰头结算、Bot 头撞玩家身体结算、玩家头撞 Bot 尾部结算、身体互撞不结算、长身体无重叠重排、同值归属、玩家失败、AI 安全出生、出生保护和圆形边界回推。",
       "reference": "command://npm-run-verify-game2048"
     },
     {
@@ -708,7 +733,7 @@
     {
       "gate": "regression",
       "type": "automation",
-      "result": "全量 npm run verify 与 git diff --check 通过，玩法领域 13/13、核心框架 28/28 保持通过。",
+      "result": "全量 npm run verify 与 git diff --check 通过，玩法领域 17/17、核心框架 28/28 保持通过。",
       "reference": "command://npm-run-verify-regression"
     }
   ],

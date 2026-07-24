@@ -64,7 +64,7 @@ const {
 } = await import(
   pathToFileURL(path.join(outputRoot, "Game2048World.mjs")).href
 );
-const { Game2048RunState } = await import(
+const { Game2048EffectKind, Game2048RunState } = await import(
   pathToFileURL(path.join(outputRoot, "Game2048Model.mjs")).href
 );
 
@@ -98,6 +98,48 @@ function overlapActors(left, right) {
   right.trail = [{ x: 0, y: 0 }, { x: 0, y: 20 }];
   left.trailAnchor = { x: 0, y: 0 };
   right.trailAnchor = { x: 0, y: 0 };
+}
+
+/**
+ * 用直线历史轨迹布置一个角色的队首和身体。
+ *
+ * 该辅助函数只用于白盒碰撞用例，确保数字顺序和空间槽位一一对应。
+ */
+function arrangeStraightBody(world, actor, segments, position, direction) {
+  actor.active = true;
+  actor.position = { ...position };
+  actor.direction = { ...direction };
+  actor.targetDirection = { ...direction };
+  actor.segments = [...segments];
+  actor.trailAnchor = { ...position };
+  actor.trail = [];
+  const historyLength =
+    (segments.length + 12) * world.config.trailSpacing + 160;
+  const sampleCount = Math.ceil(
+    historyLength / world.config.trailSampleSpacing,
+  );
+  for (let index = 0; index <= sampleCount; index += 1) {
+    actor.trail.push({
+      x:
+        position.x -
+        direction.x * index * world.config.trailSampleSpacing,
+      y:
+        position.y -
+        direction.y * index * world.config.trailSampleSpacing,
+    });
+  }
+  actor.tailFollowers = segments.slice(1).map((_, followerIndex) => {
+    const pathDistance =
+      (followerIndex + 1) * world.config.trailSpacing;
+    return {
+      position: {
+        x: position.x - direction.x * pathDistance,
+        y: position.y - direction.y * pathDistance,
+      },
+      velocity: { x: 0, y: 0 },
+      pathDistance,
+    };
+  });
 }
 
 test("相同数字可以连续进位，不同数字保持从大到小", () => {
@@ -302,19 +344,242 @@ test("尾巴跟随在常见帧率下保持近似一致", () => {
   }
 });
 
-test("角色碰撞时大队首吞噬小队首", () => {
-  const world = new Game2048World({ botCount: 1, propTargetCount: 0 });
+test("双方头部碰撞时大队首吞噬小队首并从胜方头部重排", () => {
+  const world = new Game2048World({
+    botCount: 1,
+    propTargetCount: 0,
+    playerSpeed: 0,
+    botSpeed: 0,
+    playerSpawnProtectionDuration: 0,
+  });
   world.reset(2);
   const player = playerOf(world);
   const bot = firstBotOf(world);
-  world._playerProtectionRemaining = 0;
-  player.segments = [8];
-  bot.segments = [4, 2];
-  overlapActors(player, bot);
+  arrangeStraightBody(
+    world,
+    player,
+    [64, 16, 4],
+    { x: 0, y: 0 },
+    { x: 0, y: 1 },
+  );
+  arrangeStraightBody(
+    world,
+    bot,
+    [8, 2],
+    { x: 0, y: 0 },
+    { x: 0, y: -1 },
+  );
+
   world.update(0.001);
+  const snapshot = world.getSnapshot();
+  const snapshotPlayer = snapshot.actors.find(
+    (actor) => actor.id === "player",
+  );
+  const defeatEffect = snapshot.effects.find(
+    (effect) => effect.kind === Game2048EffectKind.Defeat,
+  );
   assert.equal(bot.active, false);
-  assert.deepEqual(player.segments, [8, 4, 2]);
+  assert.deepEqual(snapshotPlayer.segments, [64, 16, 8, 4, 2]);
   assert.equal(world.state, Game2048RunState.Playing);
+  assert.ok(defeatEffect);
+  assert.ok(Math.abs(defeatEffect.position.x) < 0.001);
+  assert.ok(Math.abs(defeatEffect.position.y) < 0.001);
+  for (
+    let segmentIndex = 1;
+    segmentIndex < snapshotPlayer.segmentPositions.length;
+    segmentIndex += 1
+  ) {
+    const position = snapshotPlayer.segmentPositions[segmentIndex];
+    assert.ok(Math.abs(position.x) < 0.001);
+    assert.ok(
+      Math.abs(
+        position.y + segmentIndex * world.config.trailSpacing,
+      ) < 0.001,
+    );
+  }
+});
+
+test("Bot 头撞到玩家身体时比较双方头部并由玩家吞噬 Bot", () => {
+  const world = new Game2048World({
+    botCount: 1,
+    propTargetCount: 0,
+    playerSpeed: 0,
+    botSpeed: 0,
+    playerSpawnProtectionDuration: 0,
+  });
+  world.reset(21);
+  const player = playerOf(world);
+  const bot = firstBotOf(world);
+  arrangeStraightBody(
+    world,
+    player,
+    [64, 16, 4],
+    { x: 0, y: 0 },
+    { x: 0, y: 1 },
+  );
+  arrangeStraightBody(
+    world,
+    bot,
+    [8, 2],
+    { x: 0, y: -world.config.trailSpacing * 2 },
+    { x: 1, y: 0 },
+  );
+
+  world.update(0.001);
+  const snapshot = world.getSnapshot();
+  const snapshotPlayer = snapshot.actors.find(
+    (actor) => actor.id === "player",
+  );
+  const defeatEffect = snapshot.effects.find(
+    (effect) => effect.kind === Game2048EffectKind.Defeat,
+  );
+  assert.equal(player.active, true);
+  assert.equal(bot.active, false);
+  assert.deepEqual(snapshotPlayer.segments, [64, 16, 8, 4, 2]);
+  assert.ok(defeatEffect);
+  assert.ok(Math.abs(defeatEffect.position.x) < 0.001);
+  assert.ok(
+    Math.abs(
+      defeatEffect.position.y + world.config.trailSpacing * 2,
+    ) < 0.001,
+  );
+});
+
+test("玩家头撞到 Bot 尾部时比较双方头部并吞噬 Bot", () => {
+  const world = new Game2048World({
+    botCount: 1,
+    propTargetCount: 0,
+    playerSpeed: 0,
+    botSpeed: 0,
+    playerSpawnProtectionDuration: 0,
+  });
+  world.reset(22);
+  const player = playerOf(world);
+  const bot = firstBotOf(world);
+  arrangeStraightBody(
+    world,
+    player,
+    [64],
+    { x: 0, y: 0 },
+    { x: 0, y: 1 },
+  );
+  arrangeStraightBody(
+    world,
+    bot,
+    [8, 4, 2],
+    { x: 0, y: world.config.trailSpacing * 2 },
+    { x: 0, y: 1 },
+  );
+
+  world.update(0.001);
+  const snapshot = world.getSnapshot();
+  const snapshotPlayer = snapshot.actors.find(
+    (actor) => actor.id === "player",
+  );
+  const defeatEffect = snapshot.effects.find(
+    (effect) => effect.kind === Game2048EffectKind.Defeat,
+  );
+  assert.equal(player.active, true);
+  assert.equal(bot.active, false);
+  assert.deepEqual(snapshotPlayer.segments, [64, 8, 4, 2]);
+  assert.ok(defeatEffect);
+  assert.ok(Math.abs(defeatEffect.position.x) < 0.001);
+  assert.ok(Math.abs(defeatEffect.position.y) < 0.001);
+});
+
+test("双方只有身体重叠时不触发角色碰撞结算", () => {
+  const world = new Game2048World({
+    botCount: 1,
+    propTargetCount: 0,
+    playerSpeed: 0,
+    botSpeed: 0,
+    playerSpawnProtectionDuration: 0,
+  });
+  world.reset(23);
+  const player = playerOf(world);
+  const bot = firstBotOf(world);
+  arrangeStraightBody(
+    world,
+    player,
+    [64, 16],
+    { x: 0, y: world.config.trailSpacing },
+    { x: 0, y: 1 },
+  );
+  arrangeStraightBody(
+    world,
+    bot,
+    [32, 8],
+    { x: world.config.trailSpacing, y: 0 },
+    { x: 1, y: 0 },
+  );
+
+  world.update(0.001);
+  const snapshot = world.getSnapshot();
+  assert.equal(player.active, true);
+  assert.equal(bot.active, true);
+  assert.deepEqual(player.segments, [64, 16]);
+  assert.deepEqual(bot.segments, [32, 8]);
+  assert.equal(
+    snapshot.effects.some(
+      (effect) => effect.kind === Game2048EffectKind.Defeat,
+    ),
+    false,
+  );
+});
+
+test("短身体吞噬长 Bot 后会补足轨迹并无重叠地重排全部数字", () => {
+  const world = new Game2048World({
+    botCount: 1,
+    propTargetCount: 0,
+    playerSpeed: 0,
+    botSpeed: 0,
+    playerSpawnProtectionDuration: 0,
+  });
+  world.reset(24);
+  const player = playerOf(world);
+  const bot = firstBotOf(world);
+  const botSegments = Array.from(
+    { length: 21 },
+    (_, index) => 2 ** (21 - index),
+  );
+  arrangeStraightBody(
+    world,
+    player,
+    [2 ** 22],
+    { x: 0, y: 0 },
+    { x: 0, y: 1 },
+  );
+  arrangeStraightBody(
+    world,
+    bot,
+    botSegments,
+    { x: 0, y: 0 },
+    { x: 0, y: -1 },
+  );
+
+  world.update(0.001);
+  const snapshotPlayer = world
+    .getSnapshot()
+    .actors.find((actor) => actor.id === "player");
+  const positionKeys = snapshotPlayer.segmentPositions.map(
+    (position) => `${position.x.toFixed(3)},${position.y.toFixed(3)}`,
+  );
+  assert.equal(bot.active, false);
+  assert.equal(snapshotPlayer.segments.length, 22);
+  assert.equal(new Set(positionKeys).size, 22);
+  for (
+    let segmentIndex = 1;
+    segmentIndex < snapshotPlayer.segmentPositions.length;
+    segmentIndex += 1
+  ) {
+    const position = snapshotPlayer.segmentPositions[segmentIndex];
+    assert.ok(Math.abs(position.x) < 0.001);
+    assert.ok(
+      Math.abs(
+        position.y + segmentIndex * world.config.trailSpacing,
+      ) < 0.001,
+    );
+  }
 });
 
 test("玩家与相同队首的 AI 相撞时由玩家合并对方", () => {

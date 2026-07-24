@@ -90,6 +90,15 @@ interface MutableTailFollower {
     pathDistance: number;
 }
 
+/** 吞噬数字后身体跟随状态的重排方式。 */
+enum TailAbsorbLayout {
+    /** 单个地图数字从实际收集位置接入。 */
+    JoinFromEffect = "join-from-effect",
+
+    /** 吞噬角色后从胜方头部重新建立整条身体。 */
+    RebuildFromHead = "rebuild-from-head",
+}
+
 /** 领域层内部维护的短暂特效。 */
 interface MutableEffect {
     /** 特效唯一编号。 */
@@ -721,7 +730,7 @@ export class Game2048World {
         }
     }
 
-    /** 检测角色队首与其他角色任一数字块的接触。 */
+    /** 检测任一角色队首与另一角色全部数字块的接触，身体互撞不参与结算。 */
     private resolveActorCollisions(): void {
         const collisionDistance = this.config.tileSize * 0.76;
         const collisionDistanceSquared = collisionDistance * collisionDistance;
@@ -748,16 +757,18 @@ export class Game2048World {
                 }
                 const leftPositions = this.getSegmentPositions(left);
                 const rightPositions = this.getSegmentPositions(right);
-                const leftTouchesRight = rightPositions.some(
-                    (position) =>
-                        distanceBetweenSquared(left.position, position) <=
-                        collisionDistanceSquared,
+                const leftContactPosition = this.findHeadContactPosition(
+                    left,
+                    rightPositions,
+                    collisionDistanceSquared,
                 );
-                const rightTouchesLeft = leftPositions.some(
-                    (position) =>
-                        distanceBetweenSquared(right.position, position) <=
-                        collisionDistanceSquared,
+                const rightContactPosition = this.findHeadContactPosition(
+                    right,
+                    leftPositions,
+                    collisionDistanceSquared,
                 );
+                const leftTouchesRight = leftContactPosition !== null;
+                const rightTouchesLeft = rightContactPosition !== null;
                 if (!leftTouchesRight && !rightTouchesLeft) {
                     continue;
                 }
@@ -768,12 +779,59 @@ export class Game2048World {
                     leftTouchesRight,
                     rightTouchesLeft,
                 );
-                this.defeatActor(winner, loser);
+                const contactPosition =
+                    winner === left
+                        ? leftContactPosition ??
+                          rightContactPosition ??
+                          loser.position
+                        : rightContactPosition ??
+                          leftContactPosition ??
+                          loser.position;
+                this.defeatActor(winner, loser, contactPosition);
                 if (this._state !== Game2048RunState.Playing) {
                     return;
                 }
+                if (!left.active) {
+                    break;
+                }
             }
         }
+    }
+
+    /**
+     * 返回角色队首与另一角色最近数字块之间的实际接触点。
+     *
+     * 只从队首发起扫描，因此头撞头和头撞身体会进入结算，而身体之间单独
+     * 重叠不会触发吞噬。
+     */
+    private findHeadContactPosition(
+        headActor: MutableActor,
+        otherPositions: readonly Game2048Point[],
+        collisionDistanceSquared: number,
+    ): Game2048Point | null {
+        let closestPosition: Game2048Point | null = null;
+        let closestDistanceSquared = Number.POSITIVE_INFINITY;
+        for (const otherPosition of otherPositions) {
+            const distanceSquared = distanceBetweenSquared(
+                headActor.position,
+                otherPosition,
+            );
+            if (
+                distanceSquared > collisionDistanceSquared ||
+                distanceSquared >= closestDistanceSquared
+            ) {
+                continue;
+            }
+            closestPosition = otherPosition;
+            closestDistanceSquared = distanceSquared;
+        }
+        if (!closestPosition) {
+            return null;
+        }
+        return scalePoint(
+            addPoint(headActor.position, closestPosition),
+            0.5,
+        );
     }
 
     /** 根据队首数字和同值归属规则选出碰撞胜方。 */
@@ -817,16 +875,25 @@ export class Game2048World {
     }
 
     /** 让胜方吸收败方全部数字，并处理玩家失败或 AI 重生。 */
-    private defeatActor(winner: MutableActor, loser: MutableActor): void {
+    private defeatActor(
+        winner: MutableActor,
+        loser: MutableActor,
+        contactPosition: Game2048Point,
+    ): void {
         if (!winner.active || !loser.active) {
             return;
         }
         const defeatedValue = sum2048Values(loser.segments);
         winner.score += defeatedValue;
-        this.absorbValues(winner, loser.segments, loser.position);
+        this.absorbValues(
+            winner,
+            loser.segments,
+            contactPosition,
+            TailAbsorbLayout.RebuildFromHead,
+        );
         this.pushEffect(
             Game2048EffectKind.Defeat,
-            loser.position,
+            contactPosition,
             loser.segments[0] ?? 2,
             0.72,
         );
@@ -844,11 +911,16 @@ export class Game2048World {
         actor: MutableActor,
         values: readonly number[],
         effectPosition: Game2048Point,
+        tailLayout = TailAbsorbLayout.JoinFromEffect,
     ): void {
         const beforeLength = actor.segments.length + values.length;
         const beforeHead = actor.segments[0] ?? 2;
         actor.segments = merge2048Values([...actor.segments, ...values]);
-        this.syncTailFollowers(actor, effectPosition);
+        if (tailLayout === TailAbsorbLayout.RebuildFromHead) {
+            this.rebuildTailFollowersFromHead(actor);
+        } else {
+            this.syncTailFollowers(actor, effectPosition);
+        }
         if (
             actor.segments.length < beforeLength ||
             (actor.segments[0] ?? 2) > beforeHead
@@ -859,6 +931,101 @@ export class Game2048World {
                 actor.segments[0] ?? beforeHead,
                 0.56,
             );
+        }
+    }
+
+    /**
+     * 按合并后的数字顺序从队首重新建立整条身体。
+     *
+     * 角色相撞会一次引入多个数字并触发跨队列合并，旧跟随状态已无法继续
+     * 对应新的数字槽位；直接沿胜方历史轨迹重建可保证数字和空间顺序一致。
+     */
+    private rebuildTailFollowersFromHead(actor: MutableActor): void {
+        const followerCount = Math.max(0, actor.segments.length - 1);
+        this.ensureTrailLength(
+            actor,
+            followerCount * this.config.trailSpacing,
+        );
+        actor.tailFollowers.length = 0;
+        for (
+            let followerIndex = 0;
+            followerIndex < followerCount;
+            followerIndex += 1
+        ) {
+            const pathDistance =
+                (followerIndex + 1) * this.config.trailSpacing;
+            actor.tailFollowers.push({
+                position: this.sampleTrail(actor.trail, pathDistance),
+                velocity: { x: 0, y: 0 },
+                pathDistance,
+            });
+        }
+    }
+
+    /**
+     * 保证队首历史轨迹足以容纳指定长度的完整身体。
+     *
+     * 短身体一次吞噬长角色时，新队列可能超过原先预留的轨迹长度；沿轨迹
+     * 末端方向继续补点，可避免超出范围的多个尾块被采样到同一个末端坐标。
+     */
+    private ensureTrailLength(
+        actor: MutableActor,
+        requiredDistance: number,
+    ): void {
+        if (requiredDistance <= 0) {
+            return;
+        }
+        if (actor.trail.length === 0) {
+            actor.trail.push(clonePoint(actor.position));
+        }
+
+        let accumulatedDistance = 0;
+        for (let index = 1; index < actor.trail.length; index += 1) {
+            accumulatedDistance += distanceBetween(
+                actor.trail[index - 1],
+                actor.trail[index],
+            );
+        }
+        if (accumulatedDistance >= requiredDistance) {
+            return;
+        }
+
+        let extensionDirection = normalizePoint(
+            scalePoint(actor.direction, -1),
+        );
+        for (
+            let index = actor.trail.length - 1;
+            index > 0;
+            index -= 1
+        ) {
+            const candidateDirection = normalizePoint(
+                subtractPoint(actor.trail[index], actor.trail[index - 1]),
+            );
+            if (pointLengthSquared(candidateDirection) <= 0.0001) {
+                continue;
+            }
+            extensionDirection = candidateDirection;
+            break;
+        }
+        if (pointLengthSquared(extensionDirection) <= 0.0001) {
+            extensionDirection = { x: 0, y: -1 };
+        }
+
+        const sampleSpacing = Math.max(1, this.config.trailSampleSpacing);
+        let extensionPoint = clonePoint(
+            actor.trail[actor.trail.length - 1],
+        );
+        while (accumulatedDistance < requiredDistance) {
+            const extensionDistance = Math.min(
+                sampleSpacing,
+                requiredDistance - accumulatedDistance,
+            );
+            extensionPoint = addPoint(
+                extensionPoint,
+                scalePoint(extensionDirection, extensionDistance),
+            );
+            actor.trail.push(clonePoint(extensionPoint));
+            accumulatedDistance += extensionDistance;
         }
     }
 
