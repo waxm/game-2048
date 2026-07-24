@@ -3,9 +3,7 @@
   "general": {
     "designResolution": {
       "width": 640,
-      "height": 1136,
-      "fitWidth": true,
-      "fitHeight": true
+      "height": 1136
     }
   },
   "custom_joint_texture_layouts": []

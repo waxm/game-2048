@@ -2,7 +2,7 @@
 
 ## 框架目标
 
-这个分支只维护可复用的小型 2D 游戏框架，不包含任何具体玩法、业务 UI、关卡数据或美术资源。新游戏从 `dev` 创建独立分支后再添加业务内容。
+本目录维护从 `cocos-game-framework` 同步而来的通用能力。框架代码不得依赖 2048 玩法、业务 UI、关卡数据或美术资源；通用优化必须拆成独立提交回流框架仓库。
 
 ## 当前结构
 
@@ -47,14 +47,13 @@ Boot.scene
 - `AudioManager` 独立持有音乐和音效资源句柄。
 - `SceneBase` 在进入失败或退出时统一清理事件、计时器、Tween、调度和跟踪资源。
 
-## 新游戏接入
+## 框架同步
 
-1. 从 `dev` 创建游戏分支。
-2. 在 `assets/app/game` 添加业务状态和逻辑。
-3. 在 `assets/app/ui/<module>` 添加 UI 脚本，并建立对应的 `prefabs/<module>`、`textures/<module>`。
-4. 在 `assets/app/scenes` 和 `assets/scene` 添加业务场景。
-5. 将新增正式 Scene 和 Prefab 登记到 `tools/cocos-asset-manifest.mjs`。
-6. 为玩法规则增加独立自动化测试，并接入该分支的 `npm run verify`。
+1. 在游戏仓库中把通用优化与 2048 业务修改拆成不同提交。
+2. 确认 `assets/app/core` 不依赖 `game`、业务 UI、业务场景或具体资源。
+3. 将通用提交同步到框架仓库 `dev` 并执行完整框架验证。
+4. 框架验证通过后，把正式框架提交同步给需要它的其他游戏仓库。
+5. 2048 的 Scene、Prefab 和玩法测试继续只在本仓库维护。
 
 ## 验证命令
 
