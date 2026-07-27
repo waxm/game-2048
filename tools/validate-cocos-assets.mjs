@@ -11,8 +11,8 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 /** 需要纳入清单覆盖检查的正式 Scene 目录。 */
 const sceneRoot = path.join(projectRoot, "assets/scene");
 
-/** 需要纳入清单覆盖检查的正式 Prefab 目录。 */
-const prefabRoot = path.join(projectRoot, "assets/resources/prefabs");
+/** 需要纳入清单覆盖检查的正式 resources 目录，业务 Prefab 可以按模块分层。 */
+const prefabRoot = path.join(projectRoot, "assets/resources");
 
 /** Creator 编辑器编译脚本所在目录，用于核对实际类 ID。 */
 const creatorChunkRoot = path.join(

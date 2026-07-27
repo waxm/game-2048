@@ -1,5 +1,6 @@
 import { _decorator, Button, isValid } from "cc";
 import { App } from "../core/app/App";
+import { GAME2048_APP_INIT_OPTIONS } from "../game/game2048/Game2048ProjectConfig";
 import { SceneBase } from "../core/scene/SceneBase";
 import { SceneManager } from "../core/scene/SceneManager";
 import { Logger } from "../core/utils/Logger";
@@ -43,7 +44,7 @@ export class BootScene extends SceneBase {
             view: this.view,
             retryButton: this.retryButton,
         });
-        App.init();
+        App.init(GAME2048_APP_INIT_OPTIONS);
         this.beginLoading();
     }
 

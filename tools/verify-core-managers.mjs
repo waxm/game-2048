@@ -1034,7 +1034,10 @@ test("PoolManager 取消加载中创建并拒绝缺失生命周期组件", async
 
 test("App 初始化幂等并按顺序重置全局状态", async () => {
   cocos.director.setSceneName("Boot");
-  App.init();
+  App.init({
+    storagePrefix: "CoreGame",
+    logPrefix: "[CoreGame]",
+  });
   App.init();
   assert.equal(App.inited, true);
   assert.equal(App.get("StorageManager"), StorageManager);
@@ -1047,6 +1050,7 @@ test("App 初始化幂等并按顺序重置全局状态", async () => {
   assert.equal(cocos.game.listenerCount(cocos.Game.EVENT_SHOW), 1);
 
   StorageManager.set("persistent", 7);
+  assert.equal(cocos.sys.localStorage.getItem("CoreGame:persistent"), "7");
   let eventCount = 0;
   EventCenter.on("reset-event", () => (eventCount += 1));
   TimerManager.delay(() => undefined, 1);

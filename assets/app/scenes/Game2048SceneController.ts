@@ -13,6 +13,7 @@ import {
     isValid,
 } from "cc";
 import { App } from "../core/app/App";
+import { GAME2048_APP_INIT_OPTIONS } from "../game/game2048/Game2048ProjectConfig";
 import { SceneBase } from "../core/scene/SceneBase";
 import { SceneManager } from "../core/scene/SceneManager";
 import { Logger } from "../core/utils/Logger";
@@ -81,7 +82,7 @@ export class Game2048SceneController extends SceneBase {
     protected onEnter(): void {
         super.onEnter();
         if (!App.inited) {
-            App.init();
+            App.init(GAME2048_APP_INIT_OPTIONS);
         }
         this.assertRequiredBindings({
             renderer: this.renderer,
