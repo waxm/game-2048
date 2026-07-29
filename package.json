@@ -1,18 +1,27 @@
 {
-    "name": "game-2048",
-    "uuid": "28cce20f-7260-47d3-bd51-fbc0b70f3cd0",
-    "scripts": {
-        "typecheck": "tsc --noEmit",
-        "verify:core": "node tools/verify-core-managers.mjs",
-        "verify:game2048": "node tools/cocos-modules/game2048-demo/test-game2048-world.mjs",
-        "validate:cocos": "node tools/validate-cocos-assets.mjs",
-        "verify": "npm run typecheck && npm run verify:core && npm run verify:game && npm run validate:cocos",
-        "verify:game": "npm run verify:game2048"
-    },
-    "creator": {
-        "version": "3.8.4"
-    },
-    "devDependencies": {
-        "typescript": "5.6.3"
-    }
+  "name": "game-2048",
+  "uuid": "28cce20f-7260-47d3-bd51-fbc0b70f3cd0",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "verify:core": "node tools/verify-core-managers.mjs",
+    "verify:game2048": "node tools/cocos-modules/game2048-demo/test-game2048-world.mjs",
+    "validate:cocos": "node tools/validate-cocos-assets.mjs",
+    "verify": "npm run typecheck && npm run verify:core && npm run verify:game && npm run validate:cocos && npm run workflow:verify",
+    "verify:game": "npm run verify:game2048",
+    "workflow:setup": "node tools/cocos-workflow/setup.mjs",
+    "workflow:doctor": "node tools/cocos-workflow/doctor.mjs",
+    "workflow:log:mark": "node tools/cocos-workflow/editor-log.mjs mark",
+    "workflow:log:read": "node tools/cocos-workflow/editor-log.mjs read",
+    "workflow:preview": "node tools/cocos-workflow/preview-session.mjs",
+    "workflow:verify": "node tools/cocos-workflow/verify-workflow.mjs && node tools/cocos-workflow/verify-portable.mjs && node tools/cocos-workflow/validate-components.mjs",
+    "validate:components": "node tools/cocos-workflow/validate-components.mjs",
+    "verify:changed": "node tools/cocos-workflow/verify-changed.mjs",
+    "verify:module": "node tools/cocos-workflow/verify-module.mjs"
+  },
+  "creator": {
+    "version": "3.8.4"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  }
 }
