@@ -26,7 +26,6 @@
     "tools/cocos-workflow/verify-commit-message.mjs",
     "tools/cocos-workflow/verify-module.mjs",
     "tools/cocos-workflow/verify-portable.mjs",
-    "tools/cocos-workflow/verify-workflow.mjs",
-    "tools/validate-cocos-assets.mjs"
+    "tools/cocos-workflow/verify-workflow.mjs"
   ]
 }
