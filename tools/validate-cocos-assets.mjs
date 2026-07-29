@@ -8,11 +8,8 @@ import { cocosAssetManifest } from "./cocos-asset-manifest.mjs";
 /** 项目根目录。 */
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
-/** 需要纳入清单覆盖检查的正式 Scene 目录。 */
-const sceneRoot = path.join(projectRoot, "assets/scene");
-
-/** 需要纳入清单覆盖检查的正式 resources 目录，业务 Prefab 可以按模块分层。 */
-const prefabRoot = path.join(projectRoot, "assets/resources");
+/** 需要纳入清单覆盖检查的全部项目资源目录。 */
+const assetRoot = path.join(projectRoot, "assets");
 
 /** Creator 编辑器编译脚本所在目录，用于核对实际类 ID。 */
 const creatorChunkRoot = path.join(
@@ -197,11 +194,11 @@ function validateProjectRelativePath(relativePath, description) {
   }
 }
 
-/** 确保正式资源目录与清单完全一致，禁止遗漏校验或登记不存在的资源。 */
+/** 确保 assets 内全部 Scene 和 Prefab 与清单完全一致。 */
 function validateManifestCoverage(manifest) {
   const actualPaths = [
-    ...collectFiles(sceneRoot, ".scene"),
-    ...collectFiles(prefabRoot, ".prefab"),
+    ...collectFiles(assetRoot, ".scene"),
+    ...collectFiles(assetRoot, ".prefab"),
   ].map(toProjectPath);
   const manifestPaths = manifest.map((item) => item.assetPath);
   const actualSet = new Set(actualPaths);
