@@ -223,6 +223,31 @@ const sceneDefinitions = {
   },
 };
 
+/** 大厅头像和设置模块的稳定 Prefab 定义。 */
+const prefabDefinitions = {
+  Game2048SettingsPanel: {
+    uuid: "ba7226c3-aa8a-44d5-bf59-0002b0d05121",
+    path: "assets/resources/game/game2048/prefabs/Game2048SettingsPanel.prefab",
+  },
+  Game2048ProfilePanel: {
+    uuid: "c33717a4-8d7a-4fa4-bb17-01c388c9ec29",
+    path: "assets/resources/game/game2048/prefabs/Game2048ProfilePanel.prefab",
+  },
+  Game2048AvatarItem: {
+    uuid: "ee7e45b0-c111-4736-ab96-c18251240877",
+    path: "assets/resources/game/game2048/prefabs/Game2048AvatarItem.prefab",
+  },
+};
+
+/** 生成器负责创建的正式资源目录及其稳定 UUID。 */
+const resourceDirectoryUuids = {
+  "assets/resources": "f4164d30-f176-4820-a47f-d8479689cf67",
+  "assets/resources/game": "2173710f-e8b3-4394-a593-611974c87d89",
+  "assets/resources/game/game2048": "57d00583-b3b6-4c5a-9137-6bdc21651e7b",
+  "assets/resources/game/game2048/prefabs":
+    "e3333c2c-8b08-4caf-99a1-f8177cb435c8",
+};
+
 /** Cocos 压缩 UUID 使用的字符表。 */
 const compressedUuidAlphabet =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -428,6 +453,22 @@ function addGraphics(nodeId) {
   return componentId;
 }
 
+/** 为节点追加全屏输入拦截组件。 */
+function addBlockInputEvents(nodeId) {
+  const componentId = appendObject({
+    __type__: "cc.BlockInputEvents",
+    _name: "",
+    _objFlags: 0,
+    __editorExtras__: {},
+    node: { __id__: nodeId },
+    _enabled: true,
+    __prefab: null,
+    _id: stableFileId(`block-input:${objects[nodeId]._name}`),
+  });
+  objects[nodeId]._components.push({ __id__: componentId });
+  return componentId;
+}
+
 /** 创建带 UITransform 和 Graphics 的画布层节点。 */
 function createGraphicsLayer(name, parentId, active = true) {
   const nodeId = createNode(name, parentId, { x: 0, y: 0 }, active);
@@ -527,6 +568,96 @@ function createButton(
   return { nodeId, buttonId, labelId: label.labelId };
 }
 
+/** 为输入框宿主追加透明 Sprite，满足 Creator EditBox 运行时约束。 */
+function addTransparentSprite(nodeId) {
+  const componentId = appendObject({
+    __type__: "cc.Sprite",
+    _name: "",
+    _objFlags: 0,
+    __editorExtras__: {},
+    node: { __id__: nodeId },
+    _enabled: true,
+    __prefab: null,
+    _customMaterial: null,
+    _srcBlendFactor: 2,
+    _dstBlendFactor: 4,
+    _color: { __type__: "cc.Color", r: 255, g: 255, b: 255, a: 0 },
+    _spriteFrame: null,
+    _type: 0,
+    _fillType: 0,
+    _sizeMode: 1,
+    _fillCenter: { __type__: "cc.Vec2", x: 0, y: 0 },
+    _fillStart: 0,
+    _fillRange: 0,
+    _isTrimmedMode: true,
+    _useGrayscale: false,
+    _atlas: null,
+    _id: stableFileId(`sprite:${objects[nodeId]._name}`),
+  });
+  objects[nodeId]._components.push({ __id__: componentId });
+  return componentId;
+}
+
+/** 创建带独立 Graphics 底板的名称输入框。 */
+function createEditBox(name, parentId, text, position, size) {
+  const backgroundNodeId = createNode(
+    `${name}Background`,
+    parentId,
+    position,
+  );
+  addUiTransform(backgroundNodeId, size.width, size.height);
+  const graphicsId = addGraphics(backgroundNodeId);
+  const nodeId = createNode(name, parentId, position);
+  addUiTransform(nodeId, size.width, size.height);
+  const textLabel = createLabel(
+    `${name}TextLabel`,
+    nodeId,
+    text,
+    { x: 0, y: 0 },
+    { width: size.width - 28, height: size.height - 8 },
+    24,
+    { r: 218, g: 232, b: 248 },
+    0,
+  );
+  const placeholderLabel = createLabel(
+    `${name}PlaceholderLabel`,
+    nodeId,
+    "请输入名称",
+    { x: 0, y: 0 },
+    { width: size.width - 28, height: size.height - 8 },
+    24,
+    { r: 124, g: 148, b: 177 },
+    0,
+  );
+  objects[placeholderLabel.nodeId]._active = false;
+  const editBoxId = appendObject({
+    __type__: "cc.EditBox",
+    _name: "",
+    _objFlags: 0,
+    __editorExtras__: {},
+    node: { __id__: nodeId },
+    _enabled: true,
+    __prefab: null,
+    _textLabel: { __id__: textLabel.labelId },
+    _placeholderLabel: { __id__: placeholderLabel.labelId },
+    _returnType: 0,
+    _string: text,
+    _tabIndex: 0,
+    _backgroundImage: null,
+    _inputFlag: 5,
+    _inputMode: 6,
+    _maxLength: 10,
+    editingDidBegan: [],
+    textChanged: [],
+    editingDidEnded: [],
+    editingReturn: [],
+    _id: stableFileId(`edit-box:${name}`),
+  });
+  objects[nodeId]._components.push({ __id__: editBoxId });
+  addTransparentSprite(nodeId);
+  return { nodeId, editBoxId, graphicsId };
+}
+
 /** 替换模板画布上的业务控制器组件。 */
 function setCanvasController(typeId, fields, componentName) {
   objects[12] = {
@@ -540,6 +671,55 @@ function setCanvasController(typeId, fields, componentName) {
     ...fields,
     _id: stableFileId(`component:${componentName}`),
   };
+}
+
+/** 为任意节点追加业务脚本组件并返回组件编号。 */
+function addBusinessScript(nodeId, typeId, fields, componentName) {
+  const componentId = appendObject({
+    __type__: typeId,
+    _name: "",
+    _objFlags: 0,
+    __editorExtras__: {},
+    node: { __id__: nodeId },
+    _enabled: true,
+    __prefab: null,
+    ...fields,
+    _id: stableFileId(`component:${componentName}`),
+  });
+  objects[nodeId]._components.push({ __id__: componentId });
+  return componentId;
+}
+
+/** 创建图形头像节点及其显式渲染器绑定。 */
+function createAvatarRenderer(
+  name,
+  parentId,
+  position,
+  diameter,
+  symbol,
+) {
+  const nodeId = createNode(name, parentId, position);
+  addUiTransform(nodeId, diameter, diameter);
+  const graphicsId = addGraphics(nodeId);
+  const symbolLabel = createLabel(
+    `${name}SymbolLabel`,
+    nodeId,
+    symbol,
+    { x: 0, y: 0 },
+    { width: diameter, height: diameter },
+    Math.round(diameter * 0.35),
+    { r: 255, g: 255, b: 255 },
+  );
+  const rendererId = addBusinessScript(
+    nodeId,
+    avatarRendererTypeId,
+    {
+      graphics: { __id__: graphicsId },
+      symbolLabel: { __id__: symbolLabel.labelId },
+    },
+    `${name}:Game2048AvatarRenderer`,
+  );
+  return { nodeId, graphicsId, rendererId, symbolLabelId: symbolLabel.labelId };
 }
 
 /** 校验引用范围、父子关系、脚本数量和所有必填绑定类型。 */
@@ -670,6 +850,173 @@ function writeScene(sceneName) {
   );
 }
 
+/** 初始化一个独立 Prefab 对象表并返回根节点编号。 */
+function preparePrefab(prefabName, width = 640, height = 1136) {
+  currentSceneName = prefabName;
+  objects = [
+    {
+      __type__: "cc.Prefab",
+      _name: prefabName,
+      _objFlags: 0,
+      _native: "",
+      data: { __id__: 1 },
+      optimizationPolicy: 0,
+      asyncLoadAssets: false,
+      persistent: false,
+    },
+  ];
+  const rootId = createNode(prefabName, null, { x: 0, y: 0 });
+  addUiTransform(rootId, width, height);
+  return rootId;
+}
+
+/** 为 Prefab 中每个节点补齐稳定 PrefabInfo。 */
+function attachPrefabInfos() {
+  for (let nodeId = 0; nodeId < objects.length; nodeId += 1) {
+    const node = objects[nodeId];
+    if (node?.__type__ !== "cc.Node") {
+      continue;
+    }
+    const infoId = appendObject({
+      __type__: "cc.PrefabInfo",
+      root: { __id__: nodeId },
+      asset: { __id__: 0 },
+      fileId: stableFileId(`prefab-info:${node._name}:${nodeId}`),
+    });
+    node._prefab = { __id__: infoId };
+  }
+}
+
+/** 校验 Prefab 内部引用、父子关系和脚本必填绑定。 */
+function validateGeneratedPrefab(prefabName, scriptDefinitions) {
+  const visit = (value) => {
+    if (!value || typeof value !== "object") {
+      return;
+    }
+    if (
+      Object.keys(value).length === 1 &&
+      Object.hasOwn(value, "__id__") &&
+      (!Number.isInteger(value.__id__) ||
+        value.__id__ < 0 ||
+        value.__id__ >= objects.length)
+    ) {
+      throw new Error(`${prefabName} 包含越界 __id__：${value.__id__}`);
+    }
+    for (const child of Object.values(value)) {
+      visit(child);
+    }
+  };
+  visit(objects);
+
+  for (const definition of scriptDefinitions) {
+    const scripts = objects.filter(
+      (object) => object?.__type__ === definition.typeId,
+    );
+    if (scripts.length !== definition.count) {
+      throw new Error(
+        `${prefabName} 必须包含 ${definition.count} 个 ${definition.name}，实际 ${scripts.length} 个。`,
+      );
+    }
+    for (const script of scripts) {
+      for (const [field, expectedType] of Object.entries(
+        definition.bindings,
+      )) {
+        const target = objects[script[field]?.__id__];
+        if (target?.__type__ !== expectedType) {
+          throw new Error(
+            `${definition.name}.${field} 未绑定到 ${expectedType}。`,
+          );
+        }
+      }
+    }
+  }
+}
+
+/** 创建正式资源目录及其目录 Meta。 */
+function ensureDirectory(directoryPath) {
+  const relativeDirectory = path
+    .relative(projectRoot, directoryPath)
+    .split(path.sep)
+    .join("/");
+  const segments = relativeDirectory.split("/");
+  for (let index = 1; index <= segments.length; index += 1) {
+    const relativePath = segments.slice(0, index).join("/");
+    const absolutePath = path.join(projectRoot, relativePath);
+    fs.mkdirSync(absolutePath, { recursive: true });
+    if (relativePath === "assets") {
+      continue;
+    }
+    const metaPath = `${absolutePath}.meta`;
+    if (fs.existsSync(metaPath)) {
+      const expectedUuid = resourceDirectoryUuids[relativePath];
+      if (expectedUuid) {
+        const actualUuid = JSON.parse(
+          fs.readFileSync(metaPath, "utf8"),
+        ).uuid;
+        if (actualUuid !== expectedUuid) {
+          throw new Error(
+            `${relativePath}.meta UUID ${actualUuid} 与稳定 UUID ${expectedUuid} 不一致。`,
+          );
+        }
+      }
+      continue;
+    }
+    const uuid = resourceDirectoryUuids[relativePath];
+    if (!uuid) {
+      throw new Error(`缺少正式资源目录 ${relativePath} 的稳定 UUID。`);
+    }
+    fs.writeFileSync(
+      metaPath,
+      `${JSON.stringify(
+        {
+          ver: "1.2.0",
+          importer: "directory",
+          imported: false,
+          uuid,
+          files: [],
+          subMetas: {},
+          userData: {},
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  }
+}
+
+/** 写入 Prefab 并保留定义中的稳定 UUID。 */
+function writePrefab(prefabName) {
+  const definition = prefabDefinitions[prefabName];
+  const outputPath = path.join(projectRoot, definition.path);
+  ensureDirectory(path.dirname(outputPath));
+  fs.writeFileSync(
+    outputPath,
+    `${JSON.stringify(objects, null, 2)}\n`,
+    "utf8",
+  );
+  const metaPath = `${outputPath}.meta`;
+  const meta = fs.existsSync(metaPath)
+    ? JSON.parse(fs.readFileSync(metaPath, "utf8"))
+    : {
+        ver: "1.1.50",
+        importer: "prefab",
+        imported: false,
+        uuid: definition.uuid,
+        files: [".json"],
+        subMetas: {},
+        userData: {},
+      };
+  if (meta.uuid !== definition.uuid) {
+    throw new Error(
+      `${definition.path}.meta UUID ${meta.uuid} 与稳定 UUID ${definition.uuid} 不一致。`,
+    );
+  }
+  meta.userData = { ...meta.userData, syncNodeName: prefabName };
+  fs.writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+  console.log(`已生成 ${definition.path}，共 ${objects.length} 个序列化对象。`);
+}
+
 const bootControllerTypeId = resolveScriptTypeId(
   "BootScene",
   "assets/app/scenes/BootScene.ts",
@@ -694,6 +1041,403 @@ const gameRendererTypeId = resolveScriptTypeId(
   "Game2048Renderer",
   "assets/app/ui/game/Game2048Renderer.ts",
 );
+const settingsPanelTypeId = resolveScriptTypeId(
+  "Game2048SettingsPanel",
+  "assets/app/ui/home/Game2048SettingsPanel.ts",
+);
+const profilePanelTypeId = resolveScriptTypeId(
+  "Game2048ProfilePanel",
+  "assets/app/ui/home/Game2048ProfilePanel.ts",
+);
+const avatarRendererTypeId = resolveScriptTypeId(
+  "Game2048AvatarRenderer",
+  "assets/app/ui/home/Game2048AvatarRenderer.ts",
+);
+const avatarItemTypeId = resolveScriptTypeId(
+  "Game2048AvatarItem",
+  "assets/app/ui/home/Game2048AvatarItem.ts",
+);
+
+/** 生成 2048 冷色设置弹窗 Prefab。 */
+function generateSettingsPrefab() {
+  const rootId = preparePrefab("Game2048SettingsPanel");
+  const panelGraphicsId = addGraphics(rootId);
+  addBlockInputEvents(rootId);
+
+  const backdropNodeId = createNode(
+    "SettingsBackdropButton",
+    rootId,
+    { x: 0, y: 270 },
+  );
+  addUiTransform(backdropNodeId, 640, 596);
+  const backdropButtonId = addButton(backdropNodeId);
+
+  createLabel(
+    "SettingsTitleLabel",
+    rootId,
+    "设置",
+    { x: 0, y: -69 },
+    { width: 320, height: 56 },
+    40,
+    { r: 226, g: 242, b: 255 },
+  );
+  createLabel(
+    "SettingsSubtitleLabel",
+    rootId,
+    "调整你的竞技场体验",
+    { x: 0, y: -115 },
+    { width: 360, height: 32 },
+    18,
+    { r: 133, g: 170, b: 205 },
+  );
+  const closeButton = createButton(
+    "SettingsCloseButton",
+    rootId,
+    "关闭",
+    { x: 216, y: -74 },
+    { width: 72, height: 72 },
+    17,
+  );
+  createLabel(
+    "SoundTitleLabel",
+    rootId,
+    "游戏声音",
+    { x: -135, y: -192 },
+    { width: 190, height: 50 },
+    28,
+    { r: 220, g: 235, b: 252 },
+    0,
+  );
+  const soundStateLabel = createLabel(
+    "SoundStateLabel",
+    rootId,
+    "已开启",
+    { x: 62, y: -192 },
+    { width: 82, height: 38 },
+    17,
+    { r: 112, g: 218, b: 228 },
+    2,
+  );
+  const soundButton = createButton(
+    "SoundToggleButton",
+    rootId,
+    "",
+    { x: 176, y: -192 },
+    { width: 112, height: 72 },
+    17,
+  );
+  createLabel(
+    "VibrationTitleLabel",
+    rootId,
+    "震动反馈",
+    { x: -135, y: -318 },
+    { width: 190, height: 50 },
+    28,
+    { r: 220, g: 235, b: 252 },
+    0,
+  );
+  const vibrationStateLabel = createLabel(
+    "VibrationStateLabel",
+    rootId,
+    "已开启",
+    { x: 62, y: -318 },
+    { width: 82, height: 38 },
+    17,
+    { r: 112, g: 218, b: 228 },
+    2,
+  );
+  const vibrationButton = createButton(
+    "VibrationToggleButton",
+    rootId,
+    "",
+    { x: 176, y: -318 },
+    { width: 112, height: 72 },
+    17,
+  );
+  createLabel(
+    "SettingsHintLabel",
+    rootId,
+    "设置会自动保存",
+    { x: 0, y: -472 },
+    { width: 360, height: 40 },
+    17,
+    { r: 133, g: 170, b: 205 },
+  );
+
+  addBusinessScript(
+    rootId,
+    settingsPanelTypeId,
+    {
+      panelGraphics: { __id__: panelGraphicsId },
+      soundButton: { __id__: soundButton.buttonId },
+      vibrationButton: { __id__: vibrationButton.buttonId },
+      closeButton: { __id__: closeButton.buttonId },
+      backdropButton: { __id__: backdropButtonId },
+      soundStateLabel: { __id__: soundStateLabel.labelId },
+      vibrationStateLabel: { __id__: vibrationStateLabel.labelId },
+    },
+    "Game2048SettingsPanel",
+  );
+  attachPrefabInfos();
+  validateGeneratedPrefab("Game2048SettingsPanel", [
+    {
+      name: "Game2048SettingsPanel",
+      typeId: settingsPanelTypeId,
+      count: 1,
+      bindings: {
+        panelGraphics: "cc.Graphics",
+        soundButton: "cc.Button",
+        vibrationButton: "cc.Button",
+        closeButton: "cc.Button",
+        backdropButton: "cc.Button",
+        soundStateLabel: "cc.Label",
+        vibrationStateLabel: "cc.Label",
+      },
+    },
+  ]);
+  writePrefab("Game2048SettingsPanel");
+}
+
+/** 生成 2048 玩家资料与头像选择弹窗 Prefab。 */
+function generateProfilePrefab() {
+  const rootId = preparePrefab("Game2048ProfilePanel");
+  const overlayGraphicsId = addGraphics(rootId);
+  addBlockInputEvents(rootId);
+  const panelNodeId = createNode(
+    "ProfilePanel",
+    rootId,
+    { x: 0, y: 0 },
+  );
+  addUiTransform(panelNodeId, 540, 910);
+  const panelGraphicsId = addGraphics(panelNodeId);
+  createLabel(
+    "ProfileTitleLabel",
+    panelNodeId,
+    "玩家资料",
+    { x: 0, y: 390 },
+    { width: 320, height: 64 },
+    40,
+    { r: 224, g: 240, b: 255 },
+  );
+  const closeButton = createButton(
+    "ProfileCloseButton",
+    panelNodeId,
+    "关闭",
+    { x: 210, y: 390 },
+    { width: 82, height: 72 },
+    18,
+  );
+  const currentAvatar = createAvatarRenderer(
+    "CurrentAvatar",
+    panelNodeId,
+    { x: -156, y: 280 },
+    92,
+    "2",
+  );
+  const currentNameLabel = createLabel(
+    "CurrentPlayerNameLabel",
+    panelNodeId,
+    "霜蓝玩家",
+    { x: 55, y: 292 },
+    { width: 290, height: 50 },
+    30,
+    { r: 228, g: 244, b: 255 },
+    0,
+  );
+  objects[currentNameLabel.labelId]._overflow = 2;
+  createLabel(
+    "CurrentPlayerCaptionLabel",
+    panelNodeId,
+    "当前玩家 · 可在下方修改名称",
+    { x: 55, y: 250 },
+    { width: 290, height: 34 },
+    17,
+    { r: 128, g: 173, b: 207 },
+    0,
+  );
+  createLabel(
+    "ProfileNameTitleLabel",
+    panelNodeId,
+    "修改名称",
+    { x: -142, y: 170 },
+    { width: 160, height: 48 },
+    28,
+    { r: 178, g: 205, b: 232 },
+    0,
+  );
+  const nameInput = createEditBox(
+    "ProfileNameEditBox",
+    panelNodeId,
+    "霜蓝玩家",
+    { x: -72, y: 108 },
+    { width: 300, height: 72 },
+  );
+  const nameInputDisplayLabel = createLabel(
+    "ProfileNameDisplayLabel",
+    panelNodeId,
+    "霜蓝玩家",
+    { x: -72, y: 108 },
+    { width: 272, height: 48 },
+    24,
+    { r: 218, g: 232, b: 248 },
+    0,
+  );
+  const saveNameButton = createButton(
+    "ProfileSaveNameButton",
+    panelNodeId,
+    "保存",
+    { x: 158, y: 108 },
+    { width: 128, height: 72 },
+    24,
+  );
+  const saveNameGraphicsId = addGraphics(saveNameButton.nodeId);
+  createLabel(
+    "AvatarListTitleLabel",
+    panelNodeId,
+    "选择头像",
+    { x: -132, y: 30 },
+    { width: 180, height: 48 },
+    28,
+    { r: 178, g: 205, b: 232 },
+    0,
+  );
+  const avatarListContentId = createNode(
+    "AvatarListContent",
+    panelNodeId,
+    { x: 0, y: -160 },
+  );
+  addUiTransform(avatarListContentId, 500, 330);
+  const feedbackLabel = createLabel(
+    "ProfileFeedbackLabel",
+    panelNodeId,
+    "点击头像立即切换，名称修改后请保存",
+    { x: 0, y: -405 },
+    { width: 460, height: 36 },
+    17,
+    { r: 92, g: 211, b: 201 },
+  );
+  const closeButtonGraphicsId = addGraphics(closeButton.nodeId);
+
+  addBusinessScript(
+    rootId,
+    profilePanelTypeId,
+    {
+      overlayGraphics: { __id__: overlayGraphicsId },
+      panelGraphics: { __id__: panelGraphicsId },
+      closeButton: { __id__: closeButton.buttonId },
+      closeButtonGraphics: { __id__: closeButtonGraphicsId },
+      currentAvatarRenderer: { __id__: currentAvatar.rendererId },
+      currentNameLabel: { __id__: currentNameLabel.labelId },
+      nameEditBox: { __id__: nameInput.editBoxId },
+      nameInputDisplayLabel: { __id__: nameInputDisplayLabel.labelId },
+      nameInputGraphics: { __id__: nameInput.graphicsId },
+      saveNameButton: { __id__: saveNameButton.buttonId },
+      saveNameGraphics: { __id__: saveNameGraphicsId },
+      avatarListContent: { __id__: avatarListContentId },
+      feedbackLabel: { __id__: feedbackLabel.labelId },
+    },
+    "Game2048ProfilePanel",
+  );
+  attachPrefabInfos();
+  validateGeneratedPrefab("Game2048ProfilePanel", [
+    {
+      name: "Game2048ProfilePanel",
+      typeId: profilePanelTypeId,
+      count: 1,
+      bindings: {
+        overlayGraphics: "cc.Graphics",
+        panelGraphics: "cc.Graphics",
+        closeButton: "cc.Button",
+        closeButtonGraphics: "cc.Graphics",
+        currentAvatarRenderer: avatarRendererTypeId,
+        currentNameLabel: "cc.Label",
+        nameEditBox: "cc.EditBox",
+        nameInputDisplayLabel: "cc.Label",
+        nameInputGraphics: "cc.Graphics",
+        saveNameButton: "cc.Button",
+        saveNameGraphics: "cc.Graphics",
+        avatarListContent: "cc.Node",
+        feedbackLabel: "cc.Label",
+      },
+    },
+    {
+      name: "Game2048AvatarRenderer",
+      typeId: avatarRendererTypeId,
+      count: 1,
+      bindings: {
+        graphics: "cc.Graphics",
+        symbolLabel: "cc.Label",
+      },
+    },
+  ]);
+  writePrefab("Game2048ProfilePanel");
+}
+
+/** 生成对象池复用的 2048 头像列表项 Prefab。 */
+function generateAvatarItemPrefab() {
+  const rootId = preparePrefab("Game2048AvatarItem", 140, 145);
+  const selectButtonId = addButton(rootId);
+  const avatar = createAvatarRenderer(
+    "Avatar",
+    rootId,
+    { x: 0, y: 22 },
+    78,
+    "2",
+  );
+  const nameLabel = createLabel(
+    "AvatarNameLabel",
+    rootId,
+    "霜晶",
+    { x: 0, y: -38 },
+    { width: 130, height: 34 },
+    22,
+    { r: 205, g: 225, b: 245 },
+  );
+  const selectedLabel = createLabel(
+    "AvatarSelectedLabel",
+    rootId,
+    "当前",
+    { x: 0, y: -66 },
+    { width: 120, height: 28 },
+    18,
+    { r: 105, g: 226, b: 232 },
+  );
+  addBusinessScript(
+    rootId,
+    avatarItemTypeId,
+    {
+      selectButton: { __id__: selectButtonId },
+      avatarRenderer: { __id__: avatar.rendererId },
+      nameLabel: { __id__: nameLabel.labelId },
+      selectedLabel: { __id__: selectedLabel.labelId },
+    },
+    "Game2048AvatarItem",
+  );
+  attachPrefabInfos();
+  validateGeneratedPrefab("Game2048AvatarItem", [
+    {
+      name: "Game2048AvatarItem",
+      typeId: avatarItemTypeId,
+      count: 1,
+      bindings: {
+        selectButton: "cc.Button",
+        avatarRenderer: avatarRendererTypeId,
+        nameLabel: "cc.Label",
+        selectedLabel: "cc.Label",
+      },
+    },
+    {
+      name: "Game2048AvatarRenderer",
+      typeId: avatarRendererTypeId,
+      count: 1,
+      bindings: {
+        graphics: "cc.Graphics",
+        symbolLabel: "cc.Label",
+      },
+    },
+  ]);
+  writePrefab("Game2048AvatarItem");
+}
 
 /** 生成独立启动场景。 */
 function generateBootScene() {
@@ -819,7 +1563,7 @@ function generateLobbyScene() {
     "LobbyTitleLabel",
     viewNodeId,
     "2048 ARENA",
-    { x: 0, y: 440 },
+    { x: 0, y: 380 },
     { width: 540, height: 78 },
     50,
     { r: 255, g: 255, b: 255 },
@@ -828,7 +1572,7 @@ function generateLobbyScene() {
     "LobbySubtitleLabel",
     viewNodeId,
     "数字吞噬 · 圆形竞技场",
-    { x: 0, y: 382 },
+    { x: 0, y: 326 },
     { width: 500, height: 48 },
     23,
     { r: 166, g: 184, b: 214 },
@@ -860,6 +1604,53 @@ function generateLobbyScene() {
     { r: 145, g: 163, b: 192 },
   );
 
+  const profileNodeId = createNode(
+    "LobbyProfileButton",
+    viewNodeId,
+    { x: -95, y: 500 },
+  );
+  addUiTransform(profileNodeId, 406, 92);
+  const profileButtonId = addButton(profileNodeId);
+  const profileAvatar = createAvatarRenderer(
+    "LobbyProfileAvatar",
+    profileNodeId,
+    { x: -155, y: 0 },
+    64,
+    "2",
+  );
+  const playerNameLabel = createLabel(
+    "LobbyPlayerNameLabel",
+    profileNodeId,
+    "霜蓝玩家",
+    { x: -8, y: 13 },
+    { width: 190, height: 40 },
+    25,
+    { r: 228, g: 244, b: 255 },
+    0,
+  );
+  objects[playerNameLabel.labelId]._overflow = 2;
+  createLabel(
+    "LobbyPlayerCaptionLabel",
+    profileNodeId,
+    "2048 竞技者 · 点击编辑资料",
+    { x: 32, y: -20 },
+    { width: 270, height: 34 },
+    16,
+    { r: 125, g: 169, b: 204 },
+    0,
+  );
+  const settingsButton = createButton(
+    "LobbySettingsButton",
+    viewNodeId,
+    "设置",
+    { x: 256, y: 500 },
+    { width: 84, height: 84 },
+    21,
+  );
+
+  const uiRootNodeId = createNode("LobbyUIRoot", 7, { x: 0, y: 0 });
+  addUiTransform(uiRootNodeId, 640, 1136);
+
   const viewComponentId = appendObject({
     __type__: lobbyViewTypeId,
     _name: "",
@@ -871,6 +1662,8 @@ function generateLobbyScene() {
     backgroundGraphics: { __id__: backgroundLayer.graphicsId },
     statusLabel: { __id__: statusLabel.labelId },
     startLabel: { __id__: startButton.labelId },
+    playerNameLabel: { __id__: playerNameLabel.labelId },
+    playerAvatarRenderer: { __id__: profileAvatar.rendererId },
     _id: stableFileId("component:LobbySceneView"),
   });
   objects[viewNodeId]._components.push({ __id__: viewComponentId });
@@ -880,6 +1673,9 @@ function generateLobbyScene() {
     {
       view: { __id__: viewComponentId },
       startButton: { __id__: startButton.buttonId },
+      settingsButton: { __id__: settingsButton.buttonId },
+      profileButton: { __id__: profileButtonId },
+      uiRoot: { __id__: uiRootNodeId },
     },
     "LobbySceneController",
   );
@@ -891,6 +1687,9 @@ function generateLobbyScene() {
       bindings: {
         view: lobbyViewTypeId,
         startButton: "cc.Button",
+        settingsButton: "cc.Button",
+        profileButton: "cc.Button",
+        uiRoot: "cc.Node",
       },
     },
     {
@@ -900,6 +1699,16 @@ function generateLobbyScene() {
         backgroundGraphics: "cc.Graphics",
         statusLabel: "cc.Label",
         startLabel: "cc.Label",
+        playerNameLabel: "cc.Label",
+        playerAvatarRenderer: avatarRendererTypeId,
+      },
+    },
+    {
+      name: "Game2048AvatarRenderer",
+      typeId: avatarRendererTypeId,
+      bindings: {
+        graphics: "cc.Graphics",
+        symbolLabel: "cc.Label",
       },
     },
   ]);
@@ -1065,6 +1874,9 @@ function generateGameScene() {
   writeScene("Game2048");
 }
 
+generateSettingsPrefab();
+generateProfilePrefab();
+generateAvatarItemPrefab();
 generateBootScene();
 generateLobbyScene();
 generateGameScene();
@@ -1078,5 +1890,9 @@ console.log(
       lobbyViewTypeId,
       gameControllerTypeId,
       gameRendererTypeId,
+      settingsPanelTypeId,
+      profilePanelTypeId,
+      avatarRendererTypeId,
+      avatarItemTypeId,
     ].join("、"),
 );

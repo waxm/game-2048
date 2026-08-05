@@ -1,0 +1,508 @@
+{
+  "schemaVersion": 1,
+  "module": {
+    "id": "lobby-profile-settings",
+    "title": "2048 大厅头像与设置",
+    "kind": "screen",
+    "phase": "test-ready"
+  },
+  "capabilities": {
+    "ui": true,
+    "api": false,
+    "list": true,
+    "persistence": true,
+    "analytics": false,
+    "time": false
+  },
+  "sources": [
+    {
+      "id": "requirement-chat",
+      "kind": "requirement",
+      "location": "chat://2048-avatar-settings-cool-theme",
+      "status": "approved"
+    },
+    {
+      "id": "puzzle-profile-reference",
+      "kind": "design",
+      "location": "repo://game-puzzle/assets/app/ui/popup/UIProfilePanel.ts",
+      "status": "read"
+    },
+    {
+      "id": "puzzle-settings-reference",
+      "kind": "design",
+      "location": "repo://game-puzzle/assets/app/ui/popup/UISettingsPanel.ts",
+      "status": "read"
+    },
+    {
+      "id": "project-rules",
+      "kind": "project",
+      "location": "local://AGENTS.md",
+      "status": "approved"
+    }
+  ],
+  "project": {
+    "creatorVersion": "3.8.4",
+    "designResolution": {
+      "width": 640,
+      "height": 1136
+    },
+    "orientation": "portrait"
+  },
+  "scope": {
+    "included": [
+      "2048 大厅左上玩家头像、玩家名、身份说明和资料入口",
+      "六个冷色数字头像的选择、对象池复用和本地持久化",
+      "玩家名称编辑、Unicode 长度限制和损坏存档回退",
+      "2048 大厅右上设置入口",
+      "冷色调底部设置面板",
+      "游戏声音和震动反馈开关及本地持久化",
+      "拼图首页昵称间距、宽度和长文本缩放修正"
+    ],
+    "excluded": [
+      "账号系统、头像上传和远程玩家资料",
+      "音频资源制作、背景音乐曲目接入和系统级震动权限申请",
+      "拼图设置业务或其他拼图 UI 重构",
+      "2048 核心玩法规则修改"
+    ]
+  },
+  "decisions": [
+    {
+      "id": "decision-reference-structure",
+      "statement": "沿用拼图首页左侧头像昵称、右侧设置入口、头像资料弹窗和设置弹层的交互骨架，但使用 2048 独立业务键与冷色图形资源。",
+      "confidence": "explicit",
+      "impact": "structure",
+      "sources": ["requirement-chat", "puzzle-profile-reference", "puzzle-settings-reference"]
+    },
+    {
+      "id": "decision-cool-theme",
+      "statement": "2048 新界面使用深海军蓝、冰青和靛紫色，数字示例块同步改为冷色系。",
+      "confidence": "explicit",
+      "impact": "polish",
+      "sources": ["requirement-chat"]
+    },
+    {
+      "id": "decision-local-profile",
+      "statement": "无账号来源时使用版本化本地资料，提供名称编辑和六个稳定编号头像，不伪造远程资料或上传能力。",
+      "confidence": "inferred",
+      "impact": "behavior",
+      "sources": ["requirement-chat", "project-rules"],
+      "reason": "当前项目没有账号接口，静态默认资料可完整实现展示需求且后续可由真实适配器替换。"
+    },
+    {
+      "id": "decision-audio-settings",
+      "statement": "设置面板提供统一游戏声音和震动反馈开关；声音同步 AudioManager 两个音量通道，设置使用 game2048 独立版本化存档。",
+      "confidence": "inferred",
+      "impact": "behavior",
+      "sources": ["requirement-chat", "project-rules"],
+      "reason": "拼图参考实现使用声音与震动两项设置；2048 复用现有 AudioManager 和浏览器震动能力即可形成真实闭环。"
+    },
+    {
+      "id": "decision-puzzle-name-fix",
+      "statement": "拼图首页昵称向右移动 4 像素、宽度收窄 10 像素并使用 SHRINK，给头像留出稳定间距且避免长昵称越界。",
+      "confidence": "inferred",
+      "impact": "polish",
+      "sources": ["requirement-chat", "puzzle-profile-reference"],
+      "reason": "原昵称左边界距离头像仅 3 像素，CLAMP 会直接裁掉长名称；增加间距并自动缩小能同时覆盖短名和长名。"
+    },
+    {
+      "id": "decision-settings-layout-revision",
+      "statement": "设置面板使用 520 像素高的紧凑底部卡片；开关完整收进设置行，状态文字与开关保持至少 24 像素间距，关闭和开关触摸区均不小于 72 像素，自动保存提示使用分隔线和纯辅助文字。",
+      "confidence": "inferred",
+      "impact": "polish",
+      "sources": ["requirement-chat", "project-rules"],
+      "reason": "实际 Canvas 基线显示开关越出行卡片、状态文字贴近开关、触摸高度不足、提示区像禁用按钮且面板底部存在约 132 像素无效空白。"
+    },
+    {
+      "id": "decision-profile-layout-revision",
+      "statement": "资料面板保持现有存档与头像对象池逻辑，重排当前头像、名称和说明为从左到右阅读；名称输入区增加独立的常驻文本显示，面板内容统一使用 48 像素边距，关闭和保存触摸区不小于 72 像素。",
+      "confidence": "inferred",
+      "impact": "polish",
+      "sources": ["requirement-chat", "project-rules"],
+      "reason": "实际 Canvas 基线显示当前头像覆盖名称、输入框没有名称文字、章节标题贴近外框且关闭与保存触摸高度不足。"
+    }
+  ],
+  "openQuestions": [],
+  "states": [
+    "lobby-ready",
+    "profile-opening",
+    "profile-open",
+    "profile-closed",
+    "settings-opening",
+    "settings-open",
+    "settings-closed"
+  ],
+  "transitions": [
+    {
+      "event": "tap-profile",
+      "from": "lobby-ready",
+      "to": "profile-opening",
+      "authority": "client"
+    },
+    {
+      "event": "prefab-opened",
+      "from": "profile-opening",
+      "to": "profile-open",
+      "authority": "client"
+    },
+    {
+      "event": "save-name-or-select-avatar",
+      "from": "profile-open",
+      "to": "profile-open",
+      "authority": "client"
+    },
+    {
+      "event": "tap-profile-close",
+      "from": "profile-open",
+      "to": "profile-closed",
+      "authority": "client"
+    },
+    {
+      "event": "tap-settings",
+      "from": "lobby-ready",
+      "to": "settings-opening",
+      "authority": "client"
+    },
+    {
+      "event": "prefab-opened",
+      "from": "settings-opening",
+      "to": "settings-open",
+      "authority": "client"
+    },
+    {
+      "event": "tap-close-or-backdrop",
+      "from": "settings-open",
+      "to": "settings-closed",
+      "authority": "client"
+    },
+    {
+      "event": "toggle-sound-or-vibration",
+      "from": "settings-open",
+      "to": "settings-open",
+      "authority": "client"
+    }
+  ],
+  "architecture": {
+    "artifacts": [
+      {
+        "id": "lobby-view",
+        "role": "view",
+        "responsibility": "显示冷色大厅、默认头像、昵称和设置入口。"
+      },
+      {
+        "id": "lobby-controller",
+        "role": "controller",
+        "responsibility": "绑定资料与设置入口、配置 UI 根节点、响应资料事件并防止重复打开请求。"
+      },
+      {
+        "id": "profile-panel",
+        "role": "view",
+        "responsibility": "编辑本地名称、展示当前头像并使用对象池渲染六个头像选项。"
+      },
+      {
+        "id": "avatar-item",
+        "role": "item",
+        "responsibility": "从对象池复用并渲染一个头像定义、名称和当前选中状态。"
+      },
+      {
+        "id": "settings-panel",
+        "role": "view",
+        "responsibility": "渲染底部设置弹层、处理两个开关和关闭生命周期。"
+      },
+      {
+        "id": "profile-settings-storage",
+        "role": "adapter",
+        "responsibility": "通过 StorageManager 保存版本化资料与设置，并通过 AudioManager 和浏览器能力应用声音与震动。"
+      },
+      {
+        "id": "asset-generator",
+        "role": "config",
+        "responsibility": "使用稳定目录/资源 UUID 和 Creator 实际类 ID重复生成大厅 Scene、资料、设置和头像项 Prefab。"
+      }
+    ]
+  },
+  "interfaces": [
+    {
+      "id": "local-profile-settings",
+      "operation": "StorageManager + AudioManager + navigator.vibrate",
+      "required": true,
+      "implementation": "integrated",
+      "sources": ["project-rules"]
+    }
+  ],
+  "ui": {
+    "screens": [
+      {
+        "id": "lobby-profile",
+        "kind": "scene",
+        "prefab": "Lobby"
+      },
+      {
+        "id": "settings-sheet",
+        "kind": "popup",
+        "prefab": "Game2048SettingsPanel"
+      },
+      {
+        "id": "profile-sheet",
+        "kind": "popup",
+        "prefab": "Game2048ProfilePanel"
+      }
+    ],
+    "lists": [
+      {
+        "id": "avatar-grid",
+        "owner": "profile-sheet",
+        "container": "ProfilePanel/AvatarListContent",
+        "itemPrefab": "Game2048AvatarItem",
+        "dynamic": true,
+        "emptyState": "ProfileFeedbackLabel",
+        "maxCount": 6
+      }
+    ],
+    "bindings": [
+      {
+        "name": "playerNameLabel",
+        "component": "cc.Label",
+        "owner": "lobby-view",
+        "classification": "dynamic",
+        "source": "Game2048ProfileManager",
+        "required": true,
+        "reason": "显示玩家昵称并允许以后替换为真实资料。"
+      },
+      {
+        "name": "playerAvatarRenderer",
+        "component": "Game2048AvatarRenderer",
+        "owner": "lobby-view",
+        "classification": "dynamic",
+        "source": "Game2048ProfileManager",
+        "required": true,
+        "reason": "显示并实时同步玩家当前选择的数字头像。"
+      },
+      {
+        "name": "profileButton",
+        "component": "cc.Button",
+        "owner": "lobby-controller",
+        "classification": "interactive",
+        "source": "user action",
+        "required": true,
+        "reason": "打开资料和头像选择弹窗。"
+      },
+      {
+        "name": "settingsButton",
+        "component": "cc.Button",
+        "owner": "lobby-controller",
+        "classification": "interactive",
+        "source": "user action",
+        "required": true,
+        "reason": "打开设置弹层。"
+      },
+      {
+        "name": "soundButton",
+        "component": "cc.Button",
+        "owner": "settings-panel",
+        "classification": "interactive",
+        "source": "Game2048SettingsManager.soundEnabled",
+        "required": true,
+        "reason": "切换并持久化统一游戏声音状态。"
+      },
+      {
+        "name": "vibrationButton",
+        "component": "cc.Button",
+        "owner": "settings-panel",
+        "classification": "interactive",
+        "source": "Game2048SettingsManager.vibrationEnabled",
+        "required": true,
+        "reason": "切换并持久化震动反馈状态。"
+      }
+    ],
+    "actions": [
+      {
+        "id": "open-profile",
+        "owner": "lobby-controller",
+        "trigger": "click",
+        "handler": "LobbySceneController.openProfile"
+      },
+      {
+        "id": "save-profile-name",
+        "owner": "profile-panel",
+        "trigger": "click",
+        "handler": "Game2048ProfilePanel.onSaveNameClick"
+      },
+      {
+        "id": "select-avatar",
+        "owner": "profile-panel",
+        "trigger": "click avatar item",
+        "handler": "Game2048ProfilePanel.onAvatarSelected"
+      },
+      {
+        "id": "open-settings",
+        "owner": "lobby-controller",
+        "trigger": "click",
+        "handler": "LobbySceneController.openSettings"
+      },
+      {
+        "id": "close-settings",
+        "owner": "settings-panel",
+        "trigger": "click close button or backdrop",
+        "handler": "Game2048SettingsPanel.closePanel"
+      },
+      {
+        "id": "toggle-sound",
+        "owner": "settings-panel",
+        "trigger": "click",
+        "handler": "Game2048SettingsPanel.toggleSound"
+      },
+      {
+        "id": "toggle-vibration",
+        "owner": "settings-panel",
+        "trigger": "click",
+        "handler": "Game2048SettingsPanel.toggleVibration"
+      }
+    ],
+    "visualStates": [
+      {
+        "id": "lobby-profile-visible",
+        "owner": "lobby-view",
+        "description": "大厅显示冷色头像卡、昵称和设置入口。"
+      },
+      {
+        "id": "settings-open",
+        "owner": "settings-panel",
+        "description": "半透明遮罩上显示冷色底部设置弹层。"
+      },
+      {
+        "id": "profile-open",
+        "owner": "profile-panel",
+        "description": "全屏冷色资料弹窗显示当前头像、名称输入和六个头像选项。"
+      },
+      {
+        "id": "sound-toggle-states",
+        "owner": "settings-panel",
+        "description": "游戏声音开关清楚区分开启和关闭。"
+      },
+      {
+        "id": "vibration-toggle-states",
+        "owner": "settings-panel",
+        "description": "震动反馈开关清楚区分开启和关闭。"
+      }
+    ]
+  },
+  "acceptance": {
+    "cases": [
+      {
+        "id": "case-profile-visual-layout",
+        "title": "资料面板按头像、名称、说明从左到右阅读；输入框显示当前名称，章节边距、按钮触摸区和头像网格符合 GAME_UI_SPEC.json",
+        "status": "passed",
+        "sources": ["requirement-chat", "project-rules"]
+      },
+      {
+        "id": "case-settings-visual-layout",
+        "title": "设置面板标题、两行设置、状态、开关和保存提示层级清楚；内容距边框、文字与控件间距及触摸尺寸符合 GAME_UI_SPEC.json",
+        "status": "passed",
+        "sources": ["requirement-chat", "project-rules"]
+      },
+      {
+        "id": "case-lobby-profile",
+        "title": "大厅顶部头像、昵称和设置入口无遮挡，设置按钮触摸区域与视觉一致",
+        "status": "passed",
+        "sources": ["requirement-chat", "puzzle-profile-reference"]
+      },
+      {
+        "id": "case-settings-persistence",
+        "title": "声音与震动开关立即生效，关闭重开面板与重进应用后状态保持",
+        "status": "passed",
+        "sources": ["requirement-chat", "project-rules"]
+      },
+      {
+        "id": "case-repeat-open-close",
+        "title": "连续点击资料或设置及重复关闭不会重复注册事件或留下旧面板、对象池节点",
+        "status": "passed",
+        "sources": ["project-rules"]
+      },
+      {
+        "id": "case-puzzle-name-position",
+        "title": "拼图短昵称与头像保持间距，长昵称自动缩小且不越出资料卡",
+        "status": "passed",
+        "sources": ["requirement-chat", "puzzle-profile-reference"]
+      }
+    ],
+    "gates": [
+      {"id": "contract", "status": "passed"},
+      {"id": "static", "status": "passed"},
+      {"id": "creator-import", "status": "passed"},
+      {"id": "visual", "status": "passed"},
+      {"id": "functional-smoke", "status": "passed"},
+      {"id": "functional", "status": "passed"},
+      {"id": "api", "status": "passed"},
+      {"id": "lifecycle", "status": "passed"},
+      {"id": "regression", "status": "passed"}
+    ]
+  },
+  "evidence": [
+    {
+      "gate": "contract",
+      "type": "manual",
+      "result": "用户需求、两个项目规范、拼图头像与设置实现、2048 大厅与框架接口已完成归一化。",
+      "reference": "manual://lobby-profile-settings/contract-review"
+    },
+    {
+      "gate": "api",
+      "type": "manual",
+      "result": "本模块无远程 API；玩家资料与设置使用 StorageManager，声音使用 AudioManager，震动不支持时安全降级。",
+      "reference": "manual://lobby-profile-settings/local-storage-adapter"
+    },
+    {
+      "gate": "creator-import",
+      "type": "command",
+      "result": "Creator 3.8.4 在 12:47 至 12:50 完成资料脚本预览重编译和 Prefab 资源刷新，validate:cocos 校验 6 个资源、12 个脚本类型和 61 个必填绑定。",
+      "reference": "command://npm-run-validate-cocos"
+    },
+    {
+      "gate": "static",
+      "type": "command",
+      "result": "npm run typecheck、生成器语法检查和 git diff --check 均通过。",
+      "reference": "command://npm-run-typecheck"
+    },
+    {
+      "gate": "functional",
+      "type": "command",
+      "result": "原有 17 项玩法用例与新增 6 项资料设置用例全部通过。",
+      "reference": "command://npm-run-verify-game"
+    },
+    {
+      "gate": "visual",
+      "type": "visual",
+      "result": "实际复用 localhost:7456 的 2048 预览；资料面板完成 640×1136 设计尺寸、640×960 短屏和 640×1386 长屏内容区验收，名称输入常驻可见，头像与名称无重叠，头像切换、名称编辑保存及浏览器错误日志均通过。",
+      "reference": "preview://localhost-7456/profile-layout-2026-08-05"
+    },
+    {
+      "gate": "lifecycle",
+      "type": "manual",
+      "result": "资料打开、头像切换、大厅同步、设置开关、遮罩关闭均完成交互冒烟，新日志无业务错误。",
+      "reference": "preview://localhost-7456/lifecycle-smoke"
+    },
+    {
+      "gate": "regression",
+      "type": "automation",
+      "result": "npm run verify 完整通过：30 项核心框架、17 项玩法、6 项资料设置、资源清单和工作流可移植性均通过。",
+      "reference": "command://npm-run-verify"
+    }
+  ],
+  "deliverables": [
+    {"kind": "model", "path": "assets/app/game/game2048/Game2048AvatarCatalog.ts", "requiredFor": ["runnable", "test"]},
+    {"kind": "adapter", "path": "assets/app/game/game2048/Game2048ProfileManager.ts", "requiredFor": ["runnable", "test"]},
+    {"kind": "adapter", "path": "assets/app/game/game2048/Game2048SettingsManager.ts", "requiredFor": ["runnable", "test"]},
+    {"kind": "view", "path": "assets/app/ui/home/LobbySceneView.ts", "requiredFor": ["runnable", "test"]},
+    {"kind": "view", "path": "assets/app/ui/home/Game2048AvatarRenderer.ts", "requiredFor": ["runnable", "test"]},
+    {"kind": "view", "path": "assets/app/ui/home/Game2048AvatarItem.ts", "requiredFor": ["runnable", "test"]},
+    {"kind": "view", "path": "assets/app/ui/home/Game2048ProfilePanel.ts", "requiredFor": ["runnable", "test"]},
+    {"kind": "view", "path": "assets/app/ui/home/Game2048SettingsPanel.ts", "requiredFor": ["runnable", "test"]},
+    {"kind": "controller", "path": "assets/app/scenes/LobbySceneController.ts", "requiredFor": ["runnable", "test"]},
+    {"kind": "prefab", "path": "assets/resources/game/game2048/prefabs/Game2048AvatarItem.prefab", "requiredFor": ["runnable", "test"]},
+    {"kind": "prefab", "path": "assets/resources/game/game2048/prefabs/Game2048ProfilePanel.prefab", "requiredFor": ["runnable", "test"]},
+    {"kind": "prefab", "path": "assets/resources/game/game2048/prefabs/Game2048SettingsPanel.prefab", "requiredFor": ["runnable", "test"]},
+    {"kind": "scene", "path": "assets/scene/Lobby.scene", "requiredFor": ["runnable", "test"]},
+    {"kind": "generator", "path": "tools/cocos-modules/game2048-demo/generate-game2048-scene.mjs", "requiredFor": ["runnable", "test"]},
+    {"kind": "test", "path": "tools/cocos-modules/lobby-profile-settings/test-lobby-profile-settings.mjs", "requiredFor": ["test"]},
+    {"kind": "contract", "path": "tools/cocos-modules/lobby-profile-settings/module-contract.json", "requiredFor": ["contract", "runnable", "test"]}
+  ]
+}

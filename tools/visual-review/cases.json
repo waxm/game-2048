@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "entryScene": "Lobby",
+  "expectedPageTitleIncludes": [
+    "game-2048"
+  ],
+  "coordinateSpace": "design-top-left",
+  "cases": [
+    {
+      "id": "lobby-default",
+      "title": "大厅默认状态",
+      "actions": [],
+      "freshnessCues": [
+        "大厅包含头像、昵称和设置入口"
+      ],
+      "requiredVisuals": [
+        "头像完整显示",
+        "名称位于头像右侧并从左向右阅读",
+        "名称与头像至少间隔20像素",
+        "身份说明与名称左边缘对齐",
+        "设置入口未进入安全区"
+      ],
+      "screenshots": [
+        "design",
+        "short",
+        "long-safe"
+      ]
+    },
+    {
+      "id": "lobby-long-name",
+      "title": "大厅长名称",
+      "setup": [
+        {
+          "type": "edit-profile-name",
+          "value": "寒霜竞技场玩家"
+        }
+      ],
+      "actions": [],
+      "freshnessCues": [
+        "大厅显示测试长名称"
+      ],
+      "requiredVisuals": [
+        "名称没有覆盖头像",
+        "名称没有越过资料卡片",
+        "字号可以缩小但不可截断"
+      ],
+      "screenshots": [
+        "design",
+        "short"
+      ]
+    },
+    {
+      "id": "profile-open",
+      "title": "玩家资料面板",
+      "actions": [
+        {
+          "type": "tap-design-point",
+          "x": 225,
+          "y": 68
+        }
+      ],
+      "compareWith": "lobby-default",
+      "minimumDifferenceRatio": 0.08,
+      "freshnessCues": [
+        "资料面板标题和当前玩家名称同时可见"
+      ],
+      "requiredVisuals": [
+        "当前头像和当前名称同时可见",
+        "当前名称位于头像右侧并至少间隔20像素",
+        "输入框未聚焦时名称仍可见",
+        "输入框底板存在",
+        "保存按钮与输入框不重叠",
+        "章节标题距面板左边框至少48像素",
+        "保存按钮和关闭按钮触摸高度至少72像素",
+        "六个头像完整显示",
+        "关闭按钮距外框符合规范",
+        "底部辅助信息有明确用途且没有大面积空白"
+      ],
+      "screenshots": [
+        "design",
+        "short",
+        "long-safe"
+      ]
+    },
+    {
+      "id": "settings-open",
+      "title": "设置面板",
+      "actions": [
+        {
+          "type": "tap-design-point",
+          "x": 576,
+          "y": 68
+        }
+      ],
+      "compareWith": "lobby-default",
+      "minimumDifferenceRatio": 0.08,
+      "freshnessCues": [
+        "设置面板显示独立状态文字和开关"
+      ],
+      "requiredVisuals": [
+        "标题副标题和第一行没有重叠",
+        "内容距左右外框至少48像素",
+        "状态文字与开关至少间隔24像素",
+        "开关完整位于设置行卡片内",
+        "声音和震动两行对齐",
+        "关闭按钮和开关触摸高度至少72像素",
+        "保存提示呈现为次要信息而不是主按钮",
+        "底部没有大面积无意义空白"
+      ],
+      "screenshots": [
+        "design",
+        "short",
+        "long-safe"
+      ]
+    },
+    {
+      "id": "settings-toggle",
+      "title": "设置开关状态",
+      "actions": [
+        {
+          "type": "tap-design-point",
+          "x": 576,
+          "y": 68
+        }
+      ],
+      "requiredStates": [
+        "sound-on",
+        "sound-off",
+        "vibration-on",
+        "vibration-off"
+      ],
+      "stateActions": {
+        "sound-on": [
+          {
+            "type": "set-setting",
+            "key": "sound",
+            "value": true
+          }
+        ],
+        "sound-off": [
+          {
+            "type": "set-setting",
+            "key": "sound",
+            "value": false
+          }
+        ],
+        "vibration-on": [
+          {
+            "type": "set-setting",
+            "key": "vibration",
+            "value": true
+          }
+        ],
+        "vibration-off": [
+          {
+            "type": "set-setting",
+            "key": "vibration",
+            "value": false
+          }
+        ]
+      },
+      "minimumStateDifferenceRatio": 0.002,
+      "freshnessCues": [
+        "开关状态文字和滑块位置一致"
+      ],
+      "requiredVisuals": [
+        "开启和关闭颜色有明确差异",
+        "状态文字与滑块结果一致",
+        "点击区域与视觉范围一致"
+      ],
+      "screenshots": [
+        "design"
+      ]
+    }
+  ]
+}

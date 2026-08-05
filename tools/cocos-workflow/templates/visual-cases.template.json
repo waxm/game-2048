@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "entryScene": "Lobby",
+  "expectedPageTitleIncludes": [
+    "<REPOSITORY_NAME>"
+  ],
+  "coordinateSpace": "design-top-left",
+  "cases": [
+    {
+      "id": "lobby-default",
+      "title": "大厅默认状态",
+      "actions": [],
+      "freshnessCues": [
+        "画面显示当前项目大厅的可识别内容"
+      ],
+      "requiredVisuals": [
+        "关键内容没有遮挡或越界",
+        "动态文本完整可读",
+        "关键按钮未进入安全区"
+      ],
+      "screenshots": [
+        "design",
+        "short",
+        "long-safe"
+      ]
+    },
+    {
+      "id": "game-default",
+      "title": "玩法默认状态",
+      "actions": [
+        {
+          "type": "enter-scene",
+          "scene": "Game"
+        }
+      ],
+      "compareWith": "lobby-default",
+      "minimumDifferenceRatio": 0.05,
+      "freshnessCues": [
+        "画面显示当前项目玩法场景的可识别内容"
+      ],
+      "requiredVisuals": [
+        "核心玩法区域完整可见",
+        "操作区域没有被透明节点遮挡",
+        "短屏和长屏下关键信息仍可见"
+      ],
+      "screenshots": [
+        "design",
+        "short",
+        "long-safe"
+      ]
+    }
+  ]
+}

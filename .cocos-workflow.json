@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "workflowVersion": "1.1.0",
+  "workflowVersion": "1.3.0",
   "creator": {
     "version": "3.8.4",
     "launchPolicy": "dashboard-only",
@@ -26,6 +26,81 @@
     "developmentBuildPolicy": "explicit-only",
     "submissionValidationScript": "verify",
     "failureReassessmentLimit": 2
+  },
+  "prefab": {
+    "creationPolicy": "creator-event-only",
+    "fallbackPolicy": "stop-without-json",
+    "validationStages": [
+      "source-structure",
+      "creator-import",
+      "runtime",
+      "visual"
+    ]
+  },
+  "visualReview": {
+    "mode": "project",
+    "templates": {
+      "uiSpec": "tools/cocos-workflow/templates/GAME_UI_SPEC.template.json",
+      "cases": "tools/cocos-workflow/templates/visual-cases.template.json"
+    },
+    "project": {
+      "uiSpec": "GAME_UI_SPEC.json",
+      "cases": "tools/visual-review/cases.json",
+      "evidenceDirectory": "temp/cocos-workflow/visual-review",
+      "viewports": [
+        {
+          "id": "design",
+          "class": "design",
+          "width": 640,
+          "height": 1136,
+          "deviceScaleFactor": 1,
+          "required": true
+        },
+        {
+          "id": "short",
+          "class": "short",
+          "width": 640,
+          "height": 960,
+          "deviceScaleFactor": 1,
+          "required": true
+        },
+        {
+          "id": "long-safe",
+          "class": "long-safe",
+          "width": 640,
+          "height": 1386,
+          "deviceScaleFactor": 1,
+          "safeInsets": {
+            "top": 88,
+            "bottom": 68
+          },
+          "required": true
+        }
+      ]
+    },
+    "policy": {
+      "captureSurface": "browser-canvas",
+      "desktopCapturePolicy": "window-id-only",
+      "requireFreshPreview": true,
+      "requireStateChangeAfterAction": true,
+      "screenshot": {
+        "format": "png",
+        "rejectMissingCanvas": true,
+        "rejectMostlyBlack": true,
+        "maximumBlackPixelRatio": 0.95,
+        "aspectRatioTolerance": 0.03
+      },
+      "freshness": {
+        "maxSessionAgeMinutes": 30,
+        "requireCapturedAfterPreviewStart": true,
+        "requireSourceFileModifiedAfterPreviewStart": true
+      },
+      "runtime": {
+        "browserConsoleErrors": 0,
+        "creatorErrors": 0,
+        "creatorWarnings": 0
+      }
+    }
   },
   "machine": {
     "processDiscovery": "auto",

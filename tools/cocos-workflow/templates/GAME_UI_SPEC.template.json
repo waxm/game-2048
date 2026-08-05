@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "game": {
+    "id": "<MODULE_NAME>",
+    "name": "<GAME_NAME>",
+    "repository": "<REPOSITORY_NAME>"
+  },
+  "display": {
+    "width": 640,
+    "height": 1136,
+    "orientation": "portrait",
+    "fitPolicy": "SHOW_ALL"
+  },
+  "direction": {
+    "keywords": [
+      "清晰",
+      "一致",
+      "易操作"
+    ],
+    "references": [],
+    "avoid": [
+      "大面积无效空白",
+      "文字压住图形",
+      "装饰层级过深",
+      "动态文本没有预留长度"
+    ]
+  },
+  "palette": {
+    "background": "#101827",
+    "panel": "#18253A",
+    "panelSecondary": "#24344F",
+    "primary": "#4E9FDB",
+    "accent": "#7BDFF2",
+    "textPrimary": "#F3F8FF",
+    "textSecondary": "#A9BED8",
+    "disabled": "#7C8799"
+  },
+  "layoutTokens": {
+    "screenEdgePadding": 24,
+    "panelPadding": 40,
+    "sectionGap": 32,
+    "rowGap": 20,
+    "labelControlGap": 20,
+    "minimumTouchSize": 72,
+    "smallRadius": 12,
+    "mediumRadius": 24,
+    "panelRadius": 32
+  },
+  "typography": {
+    "pageTitle": 40,
+    "sectionTitle": 28,
+    "body": 22,
+    "caption": 17,
+    "button": 24,
+    "dynamicOverflow": "SHRINK"
+  },
+  "patterns": {
+    "dynamicText": {
+      "requiredStates": [
+        "default",
+        "long-text"
+      ],
+      "mustRemainVisible": true
+    },
+    "modal": {
+      "blockBackgroundInput": true,
+      "closePosition": "top-right"
+    }
+  }
+}

@@ -108,3 +108,67 @@ export function compileCoreForTest(projectRoot, cocosMockPath) {
     },
   };
 }
+
+/**
+ * 将明确列出的应用 TypeScript 源码临时转换为 Node 可加载的 ESM。
+ *
+ * 业务系统测试只编译真实依赖闭包，既避免引入无关 UI，也能继续复用与核心测试相同的
+ * Cocos 模拟器和模块路径改写规则。
+ */
+export function compileAppFilesForTest(
+  projectRoot,
+  cocosMockPath,
+  relativePaths,
+) {
+  const sourceRoot = path.join(projectRoot, "assets/app");
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), "workai-app-test-"));
+  const cocosMockUrl = pathToFileURL(cocosMockPath).href;
+
+  for (const relativePath of relativePaths) {
+    const sourcePath = path.join(sourceRoot, relativePath);
+    const source = fs.readFileSync(sourcePath, "utf8");
+    const result = ts.transpileModule(source, {
+      fileName: sourcePath,
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ES2022,
+        experimentalDecorators: true,
+        useDefineForClassFields: false,
+      },
+      reportDiagnostics: true,
+    });
+    const errors = (result.diagnostics ?? []).filter(
+      (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+    );
+    if (errors.length > 0) {
+      throw new Error(errors.map(formatDiagnostic).join("\n"));
+    }
+
+    const outputPath = path.join(
+      outputRoot,
+      relativePath.replace(/\.ts$/, ".mjs"),
+    );
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(
+      outputPath,
+      rewriteModuleSpecifiers(result.outputText, cocosMockUrl),
+      "utf8",
+    );
+  }
+
+  return {
+    /** 动态载入一份已经转换的应用模块。 */
+    importModule(relativePath) {
+      const modulePath = path.join(
+        outputRoot,
+        relativePath.replace(/\.ts$/, ".mjs"),
+      );
+      return import(pathToFileURL(modulePath).href);
+    },
+
+    /** 删除本轮测试生成的临时模块。 */
+    cleanup() {
+      fs.rmSync(outputRoot, { recursive: true, force: true });
+    },
+  };
+}

@@ -9,6 +9,10 @@ const {
   createValidationFailure,
   createValidationState,
 } = require("./validation-state");
+const {
+  executePrefabCommand,
+  validatePrefabCommand,
+} = require("./prefab-command");
 
 /** Creator 扩展主进程日志适配器。 */
 const logger = createExtensionLogger();
@@ -22,11 +26,20 @@ const HEARTBEAT_INTERVAL_MS = 5_000;
 /** 活动场景组件轮询间隔。 */
 const VALIDATION_INTERVAL_MS = 3_000;
 
+/** Prefab 编辑器事务轮询间隔。 */
+const PREFAB_COMMAND_INTERVAL_MS = 250;
+
 /** 心跳定时器。 */
 let heartbeatTimer = null;
 
 /** 组件校验定时器。 */
 let validationTimer = null;
+
+/** Prefab 编辑器事务定时器。 */
+let prefabCommandTimer = null;
+
+/** 防止异步轮询重入。 */
+let prefabCommandPolling = false;
 
 /** 上一次组件冲突签名，用于避免重复刷屏。 */
 let lastIssueSignature = "";
@@ -48,6 +61,16 @@ function getProjectRoot() {
 /** 返回工作流临时目录。 */
 function getWorkflowTempDirectory() {
   return path.join(getProjectRoot(), "temp/cocos-workflow");
+}
+
+/** 返回 Prefab 编辑器事务请求目录。 */
+function getPrefabRequestDirectory() {
+  return path.join(getWorkflowTempDirectory(), "prefab-requests");
+}
+
+/** 返回 Prefab 编辑器事务响应目录。 */
+function getPrefabResponseDirectory() {
+  return path.join(getWorkflowTempDirectory(), "prefab-responses");
 }
 
 /** 返回项目内组件规则。 */
@@ -88,6 +111,128 @@ function writeSession(active) {
   );
   fs.renameSync(temporaryPath, sessionPath);
   return session;
+}
+
+/** 使用临时文件原子写入 JSON，避免命令方读取半截响应。 */
+function writeJsonAtomic(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(value, null, 2)}\n`,
+    "utf8",
+  );
+  fs.renameSync(temporaryPath, filePath);
+}
+
+/** 调用场景进程中的节点检查方法。 */
+function executeSceneMethod(method, args = []) {
+  return Editor.Message.request("scene", "execute-scene-script", {
+    name: PACKAGE_NAME,
+    method,
+    args,
+  });
+}
+
+/** 返回执行 Prefab 命令所需的 Creator 官方消息适配器。 */
+function createPrefabOperations() {
+  return {
+    inspectHierarchy() {
+      return executeSceneMethod("inspectHierarchy");
+    },
+    inspectNode(locator) {
+      return executeSceneMethod("inspectNode", [locator]);
+    },
+    queryAssetInfo(prefabUrl) {
+      return Editor.Message.request(
+        "asset-db",
+        "query-asset-info",
+        prefabUrl,
+      );
+    },
+    createPrefab(nodeUuid, prefabUrl) {
+      return Editor.Message.request("scene", "create-prefab", {
+        nodeUuid,
+        url: prefabUrl,
+      });
+    },
+    refreshAsset(prefabUrl) {
+      return Editor.Message.request(
+        "asset-db",
+        "refresh-asset",
+        prefabUrl,
+      );
+    },
+    wait(milliseconds) {
+      return new Promise((resolve) => setTimeout(resolve, milliseconds));
+    },
+  };
+}
+
+/** 执行一条已经限定到当前项目的 Prefab 编辑器事务。 */
+async function runPrefabCommand(command) {
+  const validated = validatePrefabCommand(command, getProjectRoot());
+  return executePrefabCommand(validated, createPrefabOperations());
+}
+
+/** 把异常转换成不会丢失 Creator 原始错误的稳定文本。 */
+function getErrorMessage(error) {
+  if (typeof error?.message === "string" && error.message.trim()) {
+    return error.message.trim();
+  }
+  return String(error ?? "未知错误");
+}
+
+/** 处理项目临时目录中的 Prefab 编辑器事务。 */
+async function pollPrefabCommands() {
+  if (prefabCommandPolling) {
+    return;
+  }
+  prefabCommandPolling = true;
+  try {
+    const requestDirectory = getPrefabRequestDirectory();
+    if (!fs.existsSync(requestDirectory)) {
+      return;
+    }
+    const requestFiles = fs
+      .readdirSync(requestDirectory)
+      .filter((fileName) => /^[a-f0-9-]{36}\.json$/i.test(fileName))
+      .sort()
+      .slice(0, 8);
+
+    for (const fileName of requestFiles) {
+      const requestPath = path.join(requestDirectory, fileName);
+      const fallbackId = fileName.replace(/\.json$/i, "");
+      let command = null;
+      let response;
+      try {
+        command = JSON.parse(fs.readFileSync(requestPath, "utf8"));
+        const result = await runPrefabCommand(command);
+        response = {
+          schemaVersion: 1,
+          id: command.id,
+          success: true,
+          completedAt: new Date().toISOString(),
+          result,
+        };
+      } catch (error) {
+        response = {
+          schemaVersion: 1,
+          id: command?.id ?? fallbackId,
+          success: false,
+          completedAt: new Date().toISOString(),
+          error: getErrorMessage(error),
+        };
+      }
+      writeJsonAtomic(
+        path.join(getPrefabResponseDirectory(), `${response.id}.json`),
+        response,
+      );
+      fs.rmSync(requestPath, { force: true });
+    }
+  } finally {
+    prefabCommandPolling = false;
+  }
 }
 
 /** 调用场景进程执行组件规则检查。 */
@@ -161,7 +306,12 @@ function load() {
     () => void validateActiveScene(),
     VALIDATION_INTERVAL_MS,
   );
+  prefabCommandTimer = setInterval(
+    () => void pollPrefabCommands(),
+    PREFAB_COMMAND_INTERVAL_MS,
+  );
   void validateActiveScene();
+  void pollPrefabCommands();
   logger.info(`[${PACKAGE_NAME}] 跨电脑开发工作流已连接。`);
 }
 
@@ -174,6 +324,10 @@ function unload() {
   if (validationTimer) {
     clearInterval(validationTimer);
     validationTimer = null;
+  }
+  if (prefabCommandTimer) {
+    clearInterval(prefabCommandTimer);
+    prefabCommandTimer = null;
   }
   writeSession(false);
 }
@@ -190,6 +344,11 @@ module.exports = {
     /** 手动触发一次活动场景组件校验。 */
     async validateActiveScene() {
       return validateActiveScene();
+    },
+
+    /** 执行公开的 Creator-first Prefab 命令。 */
+    async prefabCommand(command) {
+      return runPrefabCommand(command);
     },
   },
 };

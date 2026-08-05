@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "game": {
+    "id": "game2048",
+    "name": "2048 竞技场",
+    "repository": "game-2048"
+  },
+  "display": {
+    "width": 640,
+    "height": 1136,
+    "orientation": "portrait",
+    "fitPolicy": "SHOW_ALL"
+  },
+  "direction": {
+    "keywords": [
+      "冷色",
+      "简洁",
+      "竞技",
+      "轻科技"
+    ],
+    "references": [
+      "game-puzzle/profile",
+      "game-puzzle/settings"
+    ],
+    "avoid": [
+      "大面积无效空白",
+      "文字压住图形",
+      "装饰层级过深",
+      "动态名称未预留长度"
+    ]
+  },
+  "palette": {
+    "background": "#040812",
+    "panel": "#0B1931",
+    "panelSecondary": "#162B4C",
+    "primary": "#2A9DBF",
+    "accent": "#70DAE4",
+    "textPrimary": "#E4F4FF",
+    "textSecondary": "#85AACD",
+    "disabled": "#8F9EB8"
+  },
+  "layoutTokens": {
+    "screenEdgePadding": 24,
+    "panelPadding": 48,
+    "sectionGap": 32,
+    "rowGap": 22,
+    "labelControlGap": 24,
+    "avatarNameGap": 20,
+    "minimumTouchSize": 72,
+    "smallRadius": 12,
+    "mediumRadius": 24,
+    "panelRadius": 36
+  },
+  "typography": {
+    "pageTitle": 40,
+    "sectionTitle": 28,
+    "body": 22,
+    "caption": 17,
+    "button": 24,
+    "dynamicOverflow": "SHRINK"
+  },
+  "patterns": {
+    "profileHeader": {
+      "direction": "avatar-name-caption",
+      "readingOrder": "left-to-right",
+      "nameAlwaysVisible": true,
+      "avatarNameGap": 20,
+      "contentPadding": 48,
+      "inputValueVisibleWhenUnfocused": true,
+      "minimumActionTouchHeight": 72
+    },
+    "settingsRow": {
+      "direction": "title-state-toggle",
+      "stateOutsideToggle": true,
+      "minimumOuterPadding": 48,
+      "minimumStateToggleGap": 24,
+      "rowHeight": 104,
+      "toggleVisualSize": {
+        "width": 96,
+        "height": 48
+      },
+      "toggleTouchSize": {
+        "width": 112,
+        "height": 72
+      }
+    },
+    "modal": {
+      "blockBackgroundInput": true,
+      "closePosition": "top-right",
+      "backdropClose": true,
+      "minimumCloseTouchSize": 72
+    }
+  }
+}

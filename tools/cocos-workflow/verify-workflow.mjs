@@ -9,6 +9,10 @@ import {
   readJson,
   validateMachineConfig,
 } from "./lib.mjs";
+import {
+  loadVisualContracts,
+  summarizeVisualContracts,
+} from "./visual-review-lib.mjs";
 
 /** 校验 Creator 桥接扩展和工作流脚本契约。 */
 function main() {
@@ -27,11 +31,15 @@ function main() {
     throw new Error("Creator 桥接扩展版本与工作流版本不一致。");
   }
   for (const scriptName of [
+    "create:prefab",
     "workflow:setup",
     "workflow:doctor",
     "workflow:log:mark",
     "workflow:log:read",
     "workflow:preview",
+    "workflow:prefab",
+    "workflow:visual",
+    "workflow:visual:verify",
     "workflow:verify",
     "validate:components",
     "verify:changed",
@@ -39,6 +47,37 @@ function main() {
   ]) {
     if (!packageJson.scripts?.[scriptName]) {
       throw new Error(`package.json 缺少工作流脚本：${scriptName}`);
+    }
+  }
+  if (
+    config.prefab.creationPolicy !== "creator-event-only" ||
+    config.prefab.fallbackPolicy !== "stop-without-json"
+  ) {
+    throw new Error("Prefab 创建策略未锁定为 Creator 官方事件。");
+  }
+  for (const requiredPath of [
+    "extensions/cocos-workflow-bridge/prefab-command.js",
+    "tools/cocos-workflow/prefab.mjs",
+    "tools/cocos-workflow/visual-review-lib.mjs",
+    "tools/cocos-workflow/visual-review.mjs",
+    config.visualReview.templates.uiSpec,
+    config.visualReview.templates.cases,
+  ]) {
+    if (!fs.existsSync(path.join(projectRoot, requiredPath))) {
+      throw new Error(`缺少 Creator-first Prefab 工作流文件：${requiredPath}`);
+    }
+  }
+  const visualContracts = loadVisualContracts(config);
+  const visualSummary = summarizeVisualContracts(config, visualContracts);
+  if (visualSummary.totalEvidence < 3) {
+    throw new Error("视觉验收契约没有覆盖足够的状态和视口。");
+  }
+  if (config.visualReview.mode === "project") {
+    if (visualContracts.uiSpec.game.repository !== packageJson.name) {
+      throw new Error("GAME_UI_SPEC.json 的仓库标识与 package.json.name 不一致。");
+    }
+    if (!Object.hasOwn(config.modules, visualContracts.uiSpec.game.id)) {
+      throw new Error("GAME_UI_SPEC.json 的游戏 id 没有对应模块验收配置。");
     }
   }
   if (

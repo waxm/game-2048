@@ -71,6 +71,18 @@ export const cocosAssetManifest = [
             type: "cc.Button",
             nodeName: "StartGameButton",
           },
+          settingsButton: {
+            type: "cc.Button",
+            nodeName: "LobbySettingsButton",
+          },
+          profileButton: {
+            type: "cc.Button",
+            nodeName: "LobbyProfileButton",
+          },
+          uiRoot: {
+            type: "cc.Node",
+            nodeName: "LobbyUIRoot",
+          },
         },
       },
       {
@@ -90,10 +102,201 @@ export const cocosAssetManifest = [
             type: "cc.Label",
             nodeName: "StartGameButtonLabel",
           },
+          playerNameLabel: {
+            type: "cc.Label",
+            nodeName: "LobbyPlayerNameLabel",
+          },
+          playerAvatarRenderer: {
+            type: "5c26amnpY5Ky7pJ4JITde/K",
+            nodeName: "LobbyProfileAvatar",
+          },
+        },
+      },
+      {
+        className: "Game2048AvatarRenderer",
+        sourcePath: "assets/app/ui/home/Game2048AvatarRenderer.ts",
+        hostNodeName: "LobbyProfileAvatar",
+        objectBindings: {
+          graphics: {
+            type: "cc.Graphics",
+            nodeName: "LobbyProfileAvatar",
+          },
+          symbolLabel: {
+            type: "cc.Label",
+            nodeName: "LobbyProfileAvatarSymbolLabel",
+          },
         },
       },
     ],
     checks: ["noCanvasAudio"],
+  },
+  {
+    kind: "prefab",
+    assetPath:
+      "assets/resources/game/game2048/prefabs/Game2048SettingsPanel.prefab",
+    scripts: [
+      {
+        className: "Game2048SettingsPanel",
+        sourcePath: "assets/app/ui/home/Game2048SettingsPanel.ts",
+        hostNodeName: "Game2048SettingsPanel",
+        objectBindings: {
+          panelGraphics: {
+            type: "cc.Graphics",
+            nodeName: "Game2048SettingsPanel",
+          },
+          soundButton: {
+            type: "cc.Button",
+            nodeName: "SoundToggleButton",
+          },
+          vibrationButton: {
+            type: "cc.Button",
+            nodeName: "VibrationToggleButton",
+          },
+          closeButton: {
+            type: "cc.Button",
+            nodeName: "SettingsCloseButton",
+          },
+          backdropButton: {
+            type: "cc.Button",
+            nodeName: "SettingsBackdropButton",
+          },
+          soundStateLabel: {
+            type: "cc.Label",
+            nodeName: "SoundStateLabel",
+          },
+          vibrationStateLabel: {
+            type: "cc.Label",
+            nodeName: "VibrationStateLabel",
+          },
+        },
+      },
+    ],
+  },
+  {
+    kind: "prefab",
+    assetPath:
+      "assets/resources/game/game2048/prefabs/Game2048ProfilePanel.prefab",
+    scripts: [
+      {
+        className: "Game2048ProfilePanel",
+        sourcePath: "assets/app/ui/home/Game2048ProfilePanel.ts",
+        hostNodeName: "Game2048ProfilePanel",
+        objectBindings: {
+          overlayGraphics: {
+            type: "cc.Graphics",
+            nodeName: "Game2048ProfilePanel",
+          },
+          panelGraphics: {
+            type: "cc.Graphics",
+            nodeName: "ProfilePanel",
+          },
+          closeButton: {
+            type: "cc.Button",
+            nodeName: "ProfileCloseButton",
+          },
+          closeButtonGraphics: {
+            type: "cc.Graphics",
+            nodeName: "ProfileCloseButton",
+          },
+          currentAvatarRenderer: {
+            type: "5c26amnpY5Ky7pJ4JITde/K",
+            nodeName: "CurrentAvatar",
+          },
+          currentNameLabel: {
+            type: "cc.Label",
+            nodeName: "CurrentPlayerNameLabel",
+          },
+          nameEditBox: {
+            type: "cc.EditBox",
+            nodeName: "ProfileNameEditBox",
+          },
+          nameInputDisplayLabel: {
+            type: "cc.Label",
+            nodeName: "ProfileNameDisplayLabel",
+          },
+          nameInputGraphics: {
+            type: "cc.Graphics",
+            nodeName: "ProfileNameEditBoxBackground",
+          },
+          saveNameButton: {
+            type: "cc.Button",
+            nodeName: "ProfileSaveNameButton",
+          },
+          saveNameGraphics: {
+            type: "cc.Graphics",
+            nodeName: "ProfileSaveNameButton",
+          },
+          avatarListContent: {
+            type: "cc.Node",
+            nodeName: "AvatarListContent",
+          },
+          feedbackLabel: {
+            type: "cc.Label",
+            nodeName: "ProfileFeedbackLabel",
+          },
+        },
+      },
+      {
+        className: "Game2048AvatarRenderer",
+        sourcePath: "assets/app/ui/home/Game2048AvatarRenderer.ts",
+        hostNodeName: "CurrentAvatar",
+        objectBindings: {
+          graphics: {
+            type: "cc.Graphics",
+            nodeName: "CurrentAvatar",
+          },
+          symbolLabel: {
+            type: "cc.Label",
+            nodeName: "CurrentAvatarSymbolLabel",
+          },
+        },
+      },
+    ],
+  },
+  {
+    kind: "prefab",
+    assetPath:
+      "assets/resources/game/game2048/prefabs/Game2048AvatarItem.prefab",
+    scripts: [
+      {
+        className: "Game2048AvatarItem",
+        sourcePath: "assets/app/ui/home/Game2048AvatarItem.ts",
+        hostNodeName: "Game2048AvatarItem",
+        objectBindings: {
+          selectButton: {
+            type: "cc.Button",
+            nodeName: "Game2048AvatarItem",
+          },
+          avatarRenderer: {
+            type: "5c26amnpY5Ky7pJ4JITde/K",
+            nodeName: "Avatar",
+          },
+          nameLabel: {
+            type: "cc.Label",
+            nodeName: "AvatarNameLabel",
+          },
+          selectedLabel: {
+            type: "cc.Label",
+            nodeName: "AvatarSelectedLabel",
+          },
+        },
+      },
+      {
+        className: "Game2048AvatarRenderer",
+        sourcePath: "assets/app/ui/home/Game2048AvatarRenderer.ts",
+        hostNodeName: "Avatar",
+        objectBindings: {
+          graphics: {
+            type: "cc.Graphics",
+            nodeName: "Avatar",
+          },
+          symbolLabel: {
+            type: "cc.Label",
+            nodeName: "AvatarSymbolLabel",
+          },
+        },
+      },
+    ],
   },
   {
     kind: "scene",

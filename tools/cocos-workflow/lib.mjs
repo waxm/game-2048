@@ -108,6 +108,117 @@ export function validateMachineConfig(
   }
 }
 
+/** 校验跨项目视觉验收策略和每个游戏自有的视口配置。 */
+export function validateVisualReviewConfig(visualReview) {
+  if (!visualReview || typeof visualReview !== "object" || Array.isArray(visualReview)) {
+    throw new Error("缺少 visualReview 工作流配置。");
+  }
+  if (!['framework-template', 'project'].includes(visualReview.mode)) {
+    throw new Error("visualReview.mode 必须为 framework-template 或 project。");
+  }
+  for (const [field, relativePath] of [
+    ["templates.uiSpec", visualReview.templates?.uiSpec],
+    ["templates.cases", visualReview.templates?.cases],
+    ["project.uiSpec", visualReview.project?.uiSpec],
+    ["project.cases", visualReview.project?.cases],
+    ["project.evidenceDirectory", visualReview.project?.evidenceDirectory],
+  ]) {
+    try {
+      resolveProjectPath(relativePath);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`visualReview.${field} 无效：${detail}`);
+    }
+  }
+  if (!visualReview.project.evidenceDirectory.startsWith("temp/cocos-workflow/")) {
+    throw new Error("视觉证据必须保存在 temp/cocos-workflow 下，禁止进入仓库正式文件。");
+  }
+  const viewports = visualReview.project.viewports;
+  if (!Array.isArray(viewports) || viewports.length < 3) {
+    throw new Error("视觉验收至少需要设计尺寸、短屏和长屏安全区三个视口。");
+  }
+  const ids = new Set();
+  const classes = new Set();
+  for (const viewport of viewports) {
+    if (
+      typeof viewport?.id !== "string" ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(viewport.id) ||
+      ids.has(viewport.id)
+    ) {
+      throw new Error(`视觉视口 id 无效或重复：${viewport?.id}`);
+    }
+    if (!['design', 'short', 'long-safe'].includes(viewport.class)) {
+      throw new Error(`视觉视口 class 无效：${viewport.class}`);
+    }
+    if (
+      !Number.isInteger(viewport.width) ||
+      viewport.width <= 0 ||
+      !Number.isInteger(viewport.height) ||
+      viewport.height <= 0 ||
+      viewport.deviceScaleFactor !== 1 ||
+      viewport.required !== true
+    ) {
+      throw new Error(`视觉视口 ${viewport.id} 必须声明有效尺寸、1 倍像素比并设为必需。`);
+    }
+    if (viewport.class === "long-safe") {
+      if (
+        !Number.isInteger(viewport.safeInsets?.top) ||
+        viewport.safeInsets.top < 0 ||
+        !Number.isInteger(viewport.safeInsets?.bottom) ||
+        viewport.safeInsets.bottom < 0
+      ) {
+        throw new Error("long-safe 视口必须声明非负上下安全区。");
+      }
+    }
+    ids.add(viewport.id);
+    classes.add(viewport.class);
+  }
+  for (const requiredClass of ['design', 'short', 'long-safe']) {
+    if (!classes.has(requiredClass)) {
+      throw new Error(`视觉验收缺少 ${requiredClass} 视口。`);
+    }
+  }
+  const policy = visualReview.policy;
+  if (
+    policy?.captureSurface !== "browser-canvas" ||
+    policy.desktopCapturePolicy !== "window-id-only" ||
+    policy.requireFreshPreview !== true ||
+    policy.requireStateChangeAfterAction !== true
+  ) {
+    throw new Error("视觉验收必须只截浏览器 Canvas，并启用新鲜预览与状态变化检查。");
+  }
+  if (
+    policy.screenshot?.format !== "png" ||
+    policy.screenshot.rejectMissingCanvas !== true ||
+    policy.screenshot.rejectMostlyBlack !== true ||
+    typeof policy.screenshot.maximumBlackPixelRatio !== "number" ||
+    policy.screenshot.maximumBlackPixelRatio <= 0 ||
+    policy.screenshot.maximumBlackPixelRatio >= 1 ||
+    typeof policy.screenshot.aspectRatioTolerance !== "number" ||
+    policy.screenshot.aspectRatioTolerance < 0 ||
+    policy.screenshot.aspectRatioTolerance > 0.1
+  ) {
+    throw new Error("视觉截图格式、Canvas、黑屏或宽高比策略无效。");
+  }
+  if (
+    !Number.isInteger(policy.freshness?.maxSessionAgeMinutes) ||
+    policy.freshness.maxSessionAgeMinutes <= 0 ||
+    policy.freshness.requireCapturedAfterPreviewStart !== true ||
+    policy.freshness.requireSourceFileModifiedAfterPreviewStart !== true
+  ) {
+    throw new Error("视觉证据新鲜度策略无效。");
+  }
+  for (const field of [
+    "browserConsoleErrors",
+    "creatorErrors",
+    "creatorWarnings",
+  ]) {
+    if (policy.runtime?.[field] !== 0) {
+      throw new Error(`visualReview.policy.runtime.${field} 必须为 0。`);
+    }
+  }
+}
+
 /** 读取并校验仅包含机器能力的本机覆盖配置。 */
 function loadLocalWorkflowConfig() {
   if (!fs.existsSync(workflowLocalConfigPath)) {
@@ -190,6 +301,28 @@ export function loadWorkflowConfig() {
   if (config.validation?.failureReassessmentLimit !== 2) {
     throw new Error("连续两次未改变首个错误后必须重新定位。");
   }
+  if (
+    config.prefab?.creationPolicy !== "creator-event-only" ||
+    config.prefab?.fallbackPolicy !== "stop-without-json"
+  ) {
+    throw new Error(
+      "Prefab 必须通过 Creator 事件创建，失败时禁止回退写序列化 JSON。",
+    );
+  }
+  if (
+    JSON.stringify(config.prefab?.validationStages) !==
+    JSON.stringify([
+      "source-structure",
+      "creator-import",
+      "runtime",
+      "visual",
+    ])
+  ) {
+    throw new Error(
+      "Prefab 校验顺序必须为源结构、Creator 导入、运行态、视觉。",
+    );
+  }
+  validateVisualReviewConfig(config.visualReview);
   validateMachineConfig(config.machine);
   for (const relativePath of [
     config.logs?.editor,

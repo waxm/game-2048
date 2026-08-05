@@ -16,6 +16,10 @@ import {
   discoverPreviewState,
   readEditorSession,
 } from "./session.mjs";
+import {
+  loadVisualContracts,
+  summarizeVisualContracts,
+} from "./visual-review-lib.mjs";
 
 const {
   formatValidationState,
@@ -46,6 +50,24 @@ async function main() {
   }).stdout;
   const componentValidation =
     extensionSession?.componentValidation ?? null;
+  const visualContracts = loadVisualContracts(config);
+  const visualSummary = summarizeVisualContracts(
+    config,
+    visualContracts,
+  );
+  const visualBlockers = [];
+  if (config.visualReview.mode !== "project") {
+    visualBlockers.push("当前是框架模板模式");
+  }
+  if (visualSummary.uiSpecStatus !== "approved") {
+    visualBlockers.push("GAME_UI_SPEC.json 尚未 approved");
+  }
+  if (config.machine.browserControl !== "available") {
+    visualBlockers.push("本机浏览器控制能力尚未确认可用");
+  }
+  if (previewUrls.length === 0) {
+    visualBlockers.push("尚未发现当前项目动态预览 URL");
+  }
 
   const report = {
     platform: process.platform,
@@ -110,6 +132,20 @@ async function main() {
       failureReassessmentLimit:
         config.validation.failureReassessmentLimit,
     },
+    prefab: config.prefab,
+    visualReview: {
+      mode: config.visualReview.mode,
+      uiSpec: visualContracts.uiSpecPath,
+      cases: visualContracts.casesPath,
+      uiSpecStatus: visualSummary.uiSpecStatus,
+      caseCount: visualSummary.cases.length,
+      requiredEvidenceCount: visualSummary.totalEvidence,
+      captureSurface: config.visualReview.policy.captureSurface,
+      evidenceDirectory:
+        config.visualReview.project.evidenceDirectory,
+      ready: visualBlockers.length === 0,
+      blockers: visualBlockers,
+    },
   };
   const componentValidationFailed =
     isValidationBlocking(componentValidation);
@@ -149,6 +185,12 @@ async function main() {
   );
   console.log(
     `完整验证：npm run ${report.validation.submissionValidationScript}；连续 ${report.validation.failureReassessmentLimit} 次未改变首个错误后重新定位。`,
+  );
+  console.log(
+    "Prefab：只允许 Creator 官方事件创建；校验顺序为结构 -> 导入 -> 运行 -> 视觉。",
+  );
+  console.log(
+    `视觉验收：${report.visualReview.ready ? "可开始" : `未就绪（${report.visualReview.blockers.join("；")}）`}；${report.visualReview.caseCount} 个用例，${report.visualReview.requiredEvidenceCount} 份证据。`,
   );
   console.log("开发阶段构建策略：仅在用户明确要求时执行。");
 }

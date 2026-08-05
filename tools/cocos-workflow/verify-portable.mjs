@@ -88,6 +88,7 @@ function main() {
     "extensions/cocos-workflow-bridge/extension-logger.js",
     "extensions/cocos-workflow-bridge/package.json",
     "extensions/cocos-workflow-bridge/main.js",
+    "extensions/cocos-workflow-bridge/prefab-command.js",
     "extensions/cocos-workflow-bridge/scene.js",
     "extensions/cocos-workflow-bridge/validation-state.js",
     "tools/cocos-workflow/platform/darwin.mjs",
@@ -95,6 +96,11 @@ function main() {
     "tools/cocos-workflow/platform/linux.mjs",
     "tools/cocos-workflow/platform/posix.mjs",
     "tools/cocos-workflow/platform/win32.mjs",
+    "tools/cocos-workflow/prefab.mjs",
+    "tools/cocos-workflow/templates/GAME_UI_SPEC.template.json",
+    "tools/cocos-workflow/templates/visual-cases.template.json",
+    "tools/cocos-workflow/visual-review-lib.mjs",
+    "tools/cocos-workflow/visual-review.mjs",
   ]) {
     if (!trackedFiles.includes(requiredPath)) {
       issues.push(`缺少可移植工作流文件：${requiredPath}`);
