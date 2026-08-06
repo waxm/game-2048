@@ -56,7 +56,7 @@ assets/app/game/game2048/view/      # 玩法表现组件
 assets/app/ui/<module>/                  # 大厅、设置等跨玩法 UI
 assets/app/scenes/                       # Boot、Lobby、Game 场景入口
 assets/scene/                            # 正式 Scene
-assets/resources/game/game2048/     # 业务 Prefab、Texture、Audio 和数据
+assets/resources/<type>/<module>/         # 按资源类型与 common、home、game 模块组织
 tools/                                   # 可重复执行的生成与验证工具
 ```
 
@@ -168,6 +168,9 @@ tools/                                   # 可重复执行的生成与验证工�
 
 - `main` 保存完整、可发布的 2048 游戏源码；功能开发使用短期功能分支。
 - 核心规则与世界模拟位于 `assets/app/game/game2048`，业务 UI 按 `common`、`home`、`game` 分类。
+- 业务资源采用与 UI 一致的浅层模块结构：Prefab 放在 `assets/resources/prefabs/<module>`，Texture 放在 `assets/resources/textures/<module>`，Audio 放在 `assets/resources/audio/<module>`，配置放在 `assets/resources/configs/<module>`。
+- 资源模块当前只使用 `common`、`home`、`game`；目录按实际资源创建，不为尚不存在的资源类型或模块预建空层级。
+- 动态加载路径必须包含资源类型和模块目录；移动资源时必须同步移动 `.meta`，并更新运行时路径、生成工具、模块契约和资源清单。
 - 玩家、数字和 Bot 的吞噬、身体重排与胜负判定必须由玩法模型计算，Renderer 只负责表现。
 - 圆形场地、生成节奏、移动速度和吞噬规则差异优先通过配置或模型参数表达。
 
@@ -188,6 +191,14 @@ tools/                                   # 可重复执行的生成与验证工�
 - 原因：现有模型、世界模拟和场景/UI 职责已经分离，当前规模下继续拆目录不会改善依赖边界。
 - 替代实现：规则保留在 `Game2048Model` 与 `Game2048World`，表现与输入保留在场景和 UI 模块；新增复杂子系统时再按职责建立子目录。
 - 验证方式：玩法用例和 TypeScript 依赖检查必须保持通过。
+
+### 浅层业务资源目录
+
+- 原通用约束：业务资源默认放在 `assets/resources/game/game2048`，再按 Prefab、Texture、Audio 和数据分层。
+- 例外范围：`assets/resources` 下全部 2048 业务资源、对应动态加载路径、生成工具、模块契约和资源清单。
+- 原因：2048 已按 `common`、`home`、`game` 划分 UI 模块；继续保留 `game/game2048` 会形成无业务含义的重复层级。
+- 替代实现：仿照拼图项目，先按 `prefabs`、`textures`、`audio`、`configs` 区分资源类型，再按 `common`、`home`、`game` 模块归属；只创建实际使用的目录。
+- 验证方式：执行 `npm run verify:changed`、`npm run verify:module -- game2048`、`npm run validate:cocos` 和 `npm run verify`，并确认 Creator 导入无 UUID 或反序列化错误。
 
 <!-- COCOS_WORKFLOW_RULES_START -->
 ## 跨电脑开发工作流

@@ -133,7 +133,7 @@ export const cocosAssetManifest = [
   {
     kind: "prefab",
     assetPath:
-      "assets/resources/game/game2048/prefabs/Game2048SettingsPanel.prefab",
+      "assets/resources/prefabs/home/Game2048SettingsPanel.prefab",
     scripts: [
       {
         className: "Game2048SettingsPanel",
@@ -175,7 +175,7 @@ export const cocosAssetManifest = [
   {
     kind: "prefab",
     assetPath:
-      "assets/resources/game/game2048/prefabs/Game2048ProfilePanel.prefab",
+      "assets/resources/prefabs/home/Game2048ProfilePanel.prefab",
     scripts: [
       {
         className: "Game2048ProfilePanel",
@@ -256,7 +256,7 @@ export const cocosAssetManifest = [
   {
     kind: "prefab",
     assetPath:
-      "assets/resources/game/game2048/prefabs/Game2048AvatarItem.prefab",
+      "assets/resources/prefabs/home/Game2048AvatarItem.prefab",
     scripts: [
       {
         className: "Game2048AvatarItem",

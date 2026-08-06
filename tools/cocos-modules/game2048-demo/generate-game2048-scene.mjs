@@ -227,25 +227,23 @@ const sceneDefinitions = {
 const prefabDefinitions = {
   Game2048SettingsPanel: {
     uuid: "ba7226c3-aa8a-44d5-bf59-0002b0d05121",
-    path: "assets/resources/game/game2048/prefabs/Game2048SettingsPanel.prefab",
+    path: "assets/resources/prefabs/home/Game2048SettingsPanel.prefab",
   },
   Game2048ProfilePanel: {
     uuid: "c33717a4-8d7a-4fa4-bb17-01c388c9ec29",
-    path: "assets/resources/game/game2048/prefabs/Game2048ProfilePanel.prefab",
+    path: "assets/resources/prefabs/home/Game2048ProfilePanel.prefab",
   },
   Game2048AvatarItem: {
     uuid: "ee7e45b0-c111-4736-ab96-c18251240877",
-    path: "assets/resources/game/game2048/prefabs/Game2048AvatarItem.prefab",
+    path: "assets/resources/prefabs/home/Game2048AvatarItem.prefab",
   },
 };
 
 /** 生成器负责创建的正式资源目录及其稳定 UUID。 */
 const resourceDirectoryUuids = {
   "assets/resources": "f4164d30-f176-4820-a47f-d8479689cf67",
-  "assets/resources/game": "2173710f-e8b3-4394-a593-611974c87d89",
-  "assets/resources/game/game2048": "57d00583-b3b6-4c5a-9137-6bdc21651e7b",
-  "assets/resources/game/game2048/prefabs":
-    "e3333c2c-8b08-4caf-99a1-f8177cb435c8",
+  "assets/resources/prefabs": "e3333c2c-8b08-4caf-99a1-f8177cb435c8",
+  "assets/resources/prefabs/home": "57d00583-b3b6-4c5a-9137-6bdc21651e7b",
 };
 
 /** Cocos 压缩 UUID 使用的字符表。 */

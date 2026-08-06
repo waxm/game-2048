@@ -12,14 +12,14 @@ export const GAME2048_HOME_UI_CONFIG = {
     /** 设置弹窗 Prefab 配置。 */
     Settings: {
         name: GAME2048_HOME_UI_NAME.Settings,
-        path: "game/game2048/prefabs/Game2048SettingsPanel",
+        path: "prefabs/home/Game2048SettingsPanel",
         cache: true,
     },
 
     /** 玩家资料弹窗 Prefab 配置。 */
     Profile: {
         name: GAME2048_HOME_UI_NAME.Profile,
-        path: "game/game2048/prefabs/Game2048ProfilePanel",
+        path: "prefabs/home/Game2048ProfilePanel",
         cache: true,
     },
 } as const;
@@ -42,7 +42,7 @@ export const GAME2048_HOME_POOL_NAME = {
 /** 2048 大厅通过资源管理器加载的稳定路径。 */
 export const GAME2048_HOME_RESOURCE_PATH = {
     /** 头像列表项 Prefab。 */
-    AvatarItemPrefab: "game/game2048/prefabs/Game2048AvatarItem",
+    AvatarItemPrefab: "prefabs/home/Game2048AvatarItem",
 } as const;
 
 /** 2048 大厅模块使用的具名事件。 */
