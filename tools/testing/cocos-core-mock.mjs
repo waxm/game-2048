@@ -94,6 +94,52 @@ export class Component {
   }
 }
 
+/** 测试专用颜色。 */
+export class Color {
+  /** 不带染色的纯白色。 */
+  static WHITE = new Color(255, 255, 255, 255);
+
+  /** 创建 RGBA 颜色。 */
+  constructor(r = 255, g = 255, b = 255, a = 255) {
+    this.r = r;
+    this.g = g;
+    this.b = b;
+    this.a = a;
+  }
+}
+
+/** 测试专用 Graphics，只记录清空和启用状态。 */
+export class Graphics extends Component {
+  enabled = true;
+  clearCount = 0;
+  clear() {
+    this.clearCount += 1;
+  }
+}
+
+/** 测试专用 UITransform。 */
+export class UITransform extends Component {
+  anchorPoint = { x: 0.5, y: 0.5 };
+  contentSize = { width: 100, height: 100 };
+  setAnchorPoint(x, y) {
+    this.anchorPoint = { x, y };
+  }
+  setContentSize(width, height) {
+    this.contentSize = { width, height };
+  }
+}
+
+/** 测试专用 Sprite。 */
+export class Sprite extends Component {
+  static Type = { SIMPLE: 0, SLICED: 1 };
+  static SizeMode = { CUSTOM: 0 };
+  enabled = true;
+  spriteFrame = null;
+  type = Sprite.Type.SIMPLE;
+  sizeMode = Sprite.SizeMode.CUSTOM;
+  color = Color.WHITE;
+}
+
 /** 测试专用三维向量。 */
 export class Vec3 {
   /** 创建三维向量。 */
@@ -342,6 +388,16 @@ export class Asset {
   destroy() {
     this.isValid = false;
   }
+}
+
+/** 测试专用 SpriteFrame。 */
+export class SpriteFrame extends Asset {
+  packable = true;
+  originalSize = { width: 800, height: 1920 };
+  insetLeft = 0;
+  insetRight = 0;
+  insetTop = 0;
+  insetBottom = 0;
 }
 
 /** 测试专用 JSON 资源。 */
@@ -955,6 +1011,11 @@ export const ResolutionPolicy = {
 export const view = {
   /** 已应用的设计分辨率记录。 */
   designResolutionCalls: [],
+
+  /** 默认模拟 20:9 竖屏下按宽度适配后的逻辑可视区。 */
+  getVisibleSize() {
+    return { width: 640, height: 1422 };
+  },
 
   /** 记录框架提交的设计分辨率和适配策略。 */
   setDesignResolutionSize(width, height, policy) {

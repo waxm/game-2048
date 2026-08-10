@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "module": {
+    "id": "game2048-generated-ui",
+    "title": "2048 竞技场通用 UI 资源",
+    "kind": "common",
+    "phase": "test-ready"
+  },
+  "capabilities": {
+    "ui": true,
+    "api": false,
+    "list": false,
+    "persistence": false,
+    "analytics": false,
+    "time": false
+  },
+  "sources": [
+    {
+      "id": "requirement-chat",
+      "kind": "requirement",
+      "location": "chat://three-game-generated-ui-kit",
+      "status": "approved"
+    },
+    {
+      "id": "ui-spec",
+      "kind": "design",
+      "location": "local://GAME_UI_SPEC.json",
+      "status": "approved"
+    },
+    {
+      "id": "imagegen-master",
+      "kind": "design",
+      "location": "local://tools/cocos-modules/game2048-generated-ui/design/background-master.png",
+      "status": "approved"
+    },
+    {
+      "id": "project-rules",
+      "kind": "project",
+      "location": "local://AGENTS.md",
+      "status": "approved"
+    }
+  ],
+  "project": {
+    "creatorVersion": "3.8.4",
+    "designResolution": {
+      "width": 640,
+      "height": 1136
+    },
+    "orientation": "portrait"
+  },
+  "scope": {
+    "included": [
+      "800×1920 冷色竞技长屏背景与中央 640×1136 交互安全区",
+      "弹窗、按钮、圆角与方形 Item、输入框、进度条、开关、头像框等通用 PNG",
+      "九宫边界清单和可重复执行的 Sharp 资源生成器",
+      "Boot、大厅、设置、资料头像和结算静态 Graphics 图片化",
+      "FixedWidth 微信竖屏适配和 ResManager 资源生命周期"
+    ],
+    "excluded": [
+      "2048 实体、竞技场碰撞、路径与即时特效等动态 Graphics",
+      "玩法规则、远程接口和平台构建发布",
+      "手写 Prefab、Scene 或 Meta"
+    ]
+  },
+  "decisions": [
+    {
+      "id": "decision-cool-arena",
+      "statement": "使用深海军蓝、冰青和靛紫构成轻科技竞技主题，并用方形数字块和圆形竞技场强化 2048 题材。",
+      "confidence": "explicit",
+      "impact": "polish",
+      "sources": ["requirement-chat", "ui-spec"]
+    },
+    {
+      "id": "decision-long-background",
+      "statement": "背景与整屏合图输出为 800×1920，运行时按可视宽度等比展开；所有交互视觉保留在中央 640×1136 安全区。",
+      "confidence": "explicit",
+      "impact": "structure",
+      "sources": ["requirement-chat", "ui-spec"]
+    },
+    {
+      "id": "decision-runtime-sprite-child",
+      "statement": "已有 Graphics 的 Inspector 宿主使用受控 Sprite 子节点显示图片，避免同节点双渲染组件限制并由视图统一释放。",
+      "confidence": "inferred",
+      "impact": "behavior",
+      "sources": ["project-rules"],
+      "reason": "Creator 运行预览证实同一节点不能同时挂载 Graphics 和 Sprite。"
+    }
+  ],
+  "openQuestions": [],
+  "states": [
+    "skin-unloaded",
+    "skin-loading",
+    "skin-visible",
+    "skin-released"
+  ],
+  "transitions": [
+    {
+      "event": "view-on-load",
+      "from": "skin-unloaded",
+      "to": "skin-loading",
+      "authority": "client"
+    },
+    {
+      "event": "sprite-frame-acquired",
+      "from": "skin-loading",
+      "to": "skin-visible",
+      "authority": "client"
+    },
+    {
+      "event": "view-on-destroy",
+      "from": "skin-visible",
+      "to": "skin-released",
+      "authority": "client"
+    }
+  ],
+  "architecture": {
+    "artifacts": [
+      {
+        "id": "asset-generator",
+        "role": "config",
+        "responsibility": "从 ImageGen 母图和主题令牌稳定生成通用 UI PNG、整屏安全区合图和九宫清单。"
+      },
+      {
+        "id": "sprite-skin-binding",
+        "role": "adapter",
+        "responsibility": "通过 ResManager 获取 SpriteFrame，配置九宫、长屏尺寸、旧请求失效和资源释放。"
+      },
+      {
+        "id": "generated-textures",
+        "role": "view",
+        "responsibility": "为 Boot、大厅、设置、资料和结算提供正式可导入图片资源。"
+      }
+    ]
+  },
+  "interfaces": [
+    {
+      "id": "local-sprite-frame-loading",
+      "operation": "ResManager.acquire + SpriteFrame",
+      "required": true,
+      "implementation": "integrated",
+      "sources": ["project-rules"]
+    }
+  ],
+  "ui": {
+    "screens": [
+      {"id": "boot", "kind": "scene", "prefab": "Boot"},
+      {"id": "lobby", "kind": "scene", "prefab": "Lobby"},
+      {"id": "settings", "kind": "popup", "prefab": "Game2048SettingsPanel"},
+      {"id": "game-over", "kind": "overlay", "prefab": "Game2048"}
+    ],
+    "lists": [],
+    "bindings": [
+      {
+        "name": "generatedSkin",
+        "component": "SpriteSkinBinding",
+        "owner": "generated-textures",
+        "classification": "dynamic",
+        "source": "resources/textures/common/generated-ui",
+        "required": true,
+        "reason": "把已绑定 Graphics 的静态视觉替换为可管理图片。"
+      }
+    ],
+    "actions": [
+      {
+        "id": "apply-generated-skin",
+        "owner": "generated-textures",
+        "trigger": "onLoad",
+        "handler": "SpriteSkinBinding.apply"
+      },
+      {
+        "id": "release-generated-skin",
+        "owner": "generated-textures",
+        "trigger": "onDestroy",
+        "handler": "SpriteSkinBinding.release"
+      }
+    ],
+    "visualStates": [
+      {
+        "id": "fixed-width-lobby",
+        "owner": "generated-textures",
+        "description": "长背景按宽铺满，头像、竞技场和开始按钮保持在中央安全区。"
+      },
+      {
+        "id": "settings-toggle-composites",
+        "owner": "generated-textures",
+        "description": "声音和震动四种组合使用独立整屏图片状态。"
+      }
+    ]
+  },
+  "acceptance": {
+    "cases": [
+      {
+        "id": "case-ui-kit-generation",
+        "title": "npm run generate:ui-kit 可重复生成 25 个资源和九宫清单",
+        "status": "passed",
+        "sources": ["requirement-chat", "ui-spec"]
+      },
+      {
+        "id": "case-fixed-width-preview",
+        "title": "2048 大厅在 FixedWidth 预览中背景无露边且交互视觉位于安全区",
+        "status": "passed",
+        "sources": ["requirement-chat", "ui-spec"]
+      },
+      {
+        "id": "case-resource-lifecycle",
+        "title": "图片句柄在异步换肤、隐藏和销毁流程中不会被旧请求覆盖或提前释放",
+        "status": "passed",
+        "sources": ["project-rules"]
+      }
+    ],
+    "gates": [
+      {"id": "contract", "status": "passed"},
+      {"id": "static", "status": "passed"},
+      {"id": "creator-import", "status": "passed"},
+      {"id": "visual", "status": "passed"},
+      {"id": "functional-smoke", "status": "passed"},
+      {"id": "functional", "status": "passed"},
+      {"id": "api", "status": "passed"},
+      {"id": "lifecycle", "status": "passed"},
+      {"id": "regression", "status": "passed"}
+    ]
+  },
+  "evidence": [
+    {
+      "gate": "contract",
+      "type": "manual",
+      "result": "用户需求、项目规则、approved UI 规格、ImageGen 母图和现有视图职责已完成归一化。",
+      "reference": "manual://game2048-generated-ui/contract-review"
+    },
+    {
+      "gate": "static",
+      "type": "command",
+      "result": "三项目 typecheck、九宫清单结构检查与资源生成器复现均通过。",
+      "reference": "command://npm-run-typecheck-and-generate-ui-kit"
+    },
+    {
+      "gate": "creator-import",
+      "type": "command",
+      "result": "Creator 3.8.4 已为全部生成 PNG 和清单创建 Meta；validate:cocos 通过。",
+      "reference": "command://npm-run-validate-cocos"
+    },
+    {
+      "gate": "visual",
+      "type": "visual",
+      "result": "实际 Canvas 预览显示冷色竞技大厅、长屏背景和中央安全区，浏览器 Console 无错误或警告。",
+      "reference": "visual://game-2048-lobby-fixed-width.png"
+    },
+    {
+      "gate": "functional",
+      "type": "command",
+      "result": "17 项 2048 玩法用例和 6 项大厅资料设置用例通过。",
+      "reference": "command://npm-run-verify-game"
+    },
+    {
+      "gate": "functional-smoke",
+      "type": "visual",
+      "result": "实际预览从 Boot 进入大厅并点击开始进入 2048 玩法场景。",
+      "reference": "preview://game-2048/boot-lobby-game"
+    },
+    {
+      "gate": "api",
+      "type": "manual",
+      "result": "本模块无远程 API，只使用本地 resources SpriteFrame。",
+      "reference": "manual://no-remote-api"
+    },
+    {
+      "gate": "lifecycle",
+      "type": "manual",
+      "result": "图片旧请求失效、换肤句柄替换、受控子节点销毁和视图 onDestroy 释放路径已检查。",
+      "reference": "manual://sprite-skin-binding/lifecycle"
+    },
+    {
+      "gate": "regression",
+      "type": "automation",
+      "result": "核心框架、玩法、资源绑定和工作流完整验证通过。",
+      "reference": "command://npm-run-verify"
+    }
+  ],
+  "deliverables": [
+    {"kind": "texture", "path": "assets/resources/textures/common/generated-ui", "requiredFor": ["runnable", "test"]},
+    {"kind": "adapter", "path": "assets/app/core/ui/UIBase.ts", "requiredFor": ["runnable", "test"]},
+    {"kind": "generator", "path": "tools/cocos-modules/game2048-generated-ui/generate-ui-kit.mjs", "requiredFor": ["runnable", "test"]},
+    {"kind": "design", "path": "tools/cocos-modules/game2048-generated-ui/design/background-master.png", "requiredFor": ["runnable"]},
+    {"kind": "contract", "path": "tools/cocos-modules/game2048-generated-ui/module-contract.json", "requiredFor": ["contract", "runnable", "test"]}
+  ]
+}

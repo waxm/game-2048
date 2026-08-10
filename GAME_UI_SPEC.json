@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "draft",
+  "status": "approved",
   "game": {
     "id": "game2048",
     "name": "2048 竞技场",
@@ -10,7 +10,7 @@
     "width": 640,
     "height": 1136,
     "orientation": "portrait",
-    "fitPolicy": "SHOW_ALL"
+    "fitPolicy": "FIXED_WIDTH"
   },
   "direction": {
     "keywords": [
@@ -20,8 +20,8 @@
       "轻科技"
     ],
     "references": [
-      "game-puzzle/profile",
-      "game-puzzle/settings"
+      "assets/resources/textures/common/generated-ui/ui-kit-manifest.json",
+      "tools/cocos-modules/game2048-generated-ui/design/background-master.png"
     ],
     "avoid": [
       "大面积无效空白",
@@ -90,6 +90,16 @@
       "closePosition": "top-right",
       "backdropClose": true,
       "minimumCloseTouchSize": 72
+    },
+    "longBackground": {
+      "sourceSize": "800x1920",
+      "fit": "visible-width",
+      "safeFrame": "640x1136",
+      "cropRule": "short-screen-crops-top-bottom"
+    },
+    "nineSlice": {
+      "manifest": "assets/resources/textures/common/generated-ui/ui-kit-manifest.json",
+      "decorationsOutsideStretchCenter": true
     }
   }
 }

@@ -6,6 +6,8 @@ import {
     Label,
     UITransform,
 } from "cc";
+import { SpriteSkinBinding } from "../../core/ui/UIBase";
+import { Logger } from "../../core/utils/Logger";
 import {
     Game2048ActorKind,
     Game2048ActorSnapshot,
@@ -56,6 +58,10 @@ const BOT_STROKE_COLOR = new Color(35, 42, 58, 245);
  */
 @ccclass("Game2048Renderer")
 export class Game2048Renderer extends Component {
+    /** 2048 通用图片资源根路径。 */
+    private static readonly UI_TEXTURE_ROOT =
+        "textures/common/generated-ui";
+
     /** 圆形地图、底色、网格和边界画布。 */
     @property(Graphics)
     public arenaGraphics: Graphics | null = null;
@@ -97,6 +103,12 @@ export class Game2048Renderer extends Component {
     /** 当前镜头坐标。 */
     private _cameraPosition: Game2048Point = { x: 0, y: 0 };
 
+    /** 当前渲染器持有的结算图片皮肤与资源句柄。 */
+    private readonly _skin = new SpriteSkinBinding();
+
+    /** 当前是否应显示结算图片。 */
+    private _gameOverVisible = false;
+
     /** Cocos 生命周期：校验全部必填引用并读取画布尺寸。 */
     protected onLoad(): void {
         const missingBindings = [
@@ -124,6 +136,7 @@ export class Game2048Renderer extends Component {
         this._viewWidth = transform.contentSize.width;
         this._viewHeight = transform.contentSize.height;
         this.hintLabel!.string = "移动鼠标 / 拖动屏幕 / WASD 控制方向";
+        void this.applyGeneratedSkin();
     }
 
     /** 渲染一帧完整世界快照。 */
@@ -143,6 +156,34 @@ export class Game2048Renderer extends Component {
         this.entityGraphics?.clear();
         this.effectGraphics?.clear();
         this.overlayGraphics?.clear();
+        this._gameOverVisible = false;
+        const overlaySprite = this.overlayGraphics
+            ? this._skin.getSprite(this.overlayGraphics.node)
+            : null;
+        if (overlaySprite) {
+            overlaySprite.enabled = false;
+        }
+    }
+
+    /** 节点销毁时归还结算图片资源。 */
+    protected onDestroy(): void {
+        this._skin.release();
+    }
+
+    /** 预加载全屏结算遮罩、卡片和按钮合成图。 */
+    private async applyGeneratedSkin(): Promise<void> {
+        try {
+            const sprite = await this._skin.apply(
+                this.overlayGraphics!,
+                `${Game2048Renderer.UI_TEXTURE_ROOT}/game_over_composite/spriteFrame`,
+                { fitVisibleWidth: true },
+            );
+            if (sprite) {
+                sprite.enabled = this._gameOverVisible;
+            }
+        } catch (error) {
+            Logger.error("2048 结算图片皮肤加载失败。", error);
+        }
     }
 
     /** 绘制黑色外部区域、竞技场、网格和圆形边界。 */
@@ -549,11 +590,15 @@ export class Game2048Renderer extends Component {
                 : "移动鼠标 / 拖动屏幕 / WASD 控制方向";
     }
 
-    /** 根据玩法状态绘制或清空失败遮罩与结果卡片。 */
+    /** 根据玩法状态显示或隐藏结算图片。 */
     private drawGameOver(snapshot: Game2048WorldSnapshot): void {
-        const graphics = this.overlayGraphics!;
-        graphics.clear();
-        if (snapshot.state !== Game2048RunState.GameOver) {
+        this._gameOverVisible =
+            snapshot.state === Game2048RunState.GameOver;
+        const sprite = this._skin.getSprite(this.overlayGraphics!.node);
+        if (sprite) {
+            sprite.enabled = this._gameOverVisible;
+        }
+        if (!this._gameOverVisible) {
             return;
         }
 
@@ -563,31 +608,6 @@ export class Game2048Renderer extends Component {
         this.finalResultLabel!.string =
             `最终队首  ${player?.segments[0] ?? 0}\n` +
             `最终得分  ${player?.score ?? 0}`;
-
-        graphics.fillColor = new Color(2, 5, 13, 205);
-        graphics.rect(
-            -this._viewWidth * 0.5,
-            -this._viewHeight * 0.5,
-            this._viewWidth,
-            this._viewHeight,
-        );
-        graphics.fill();
-
-        graphics.fillColor = new Color(24, 33, 53, 250);
-        graphics.roundRect(-260, -278, 520, 502, 34);
-        graphics.fill();
-        graphics.lineWidth = 3;
-        graphics.strokeColor = new Color(104, 129, 165, 255);
-        graphics.roundRect(-260, -278, 520, 502, 34);
-        graphics.stroke();
-
-        graphics.fillColor = new Color(108, 92, 231, 255);
-        graphics.roundRect(-174, -150, 348, 72, 22);
-        graphics.fill();
-
-        graphics.fillColor = new Color(43, 56, 80, 255);
-        graphics.roundRect(-174, -242, 348, 64, 20);
-        graphics.fill();
     }
 
     /** 绘制一个带颜色、描边和矢量数字的方形块。 */

@@ -1,7 +1,234 @@
-import { _decorator, Component, isValid } from "cc";
+import {
+    _decorator,
+    Color,
+    Component,
+    Graphics,
+    isValid,
+    Node,
+    Sprite,
+    SpriteFrame,
+    UITransform,
+    view,
+} from "cc";
+import type { ResourceHandle } from "../resource/ResManager";
+import { ResManager } from "../resource/ResManager";
 import { Logger } from "../utils/Logger";
 
 const { ccclass } = _decorator;
+
+/** 九宫图片在运行时使用的边界像素。 */
+export interface SpriteSkinInsets {
+    /** 左侧不可拉伸区域。 */
+    left: number;
+
+    /** 右侧不可拉伸区域。 */
+    right: number;
+
+    /** 顶部不可拉伸区域。 */
+    top: number;
+
+    /** 底部不可拉伸区域。 */
+    bottom: number;
+}
+
+/** 图片皮肤应用参数。 */
+export interface SpriteSkinOptions {
+    /** 设为 true 时按九宫方式渲染。 */
+    sliced?: boolean;
+
+    /** 九宫不可拉伸边界。 */
+    insets?: SpriteSkinInsets;
+
+    /** 图片整体颜色，用于头像等可复用彩色底板。 */
+    color?: Color;
+
+    /** 可选锚点；进度条填充使用左中锚点。 */
+    anchor?: readonly [number, number];
+
+    /** 按可视区宽度等比展开，供 800×1920 长屏背景和整屏合图使用。 */
+    fitVisibleWidth?: boolean;
+}
+
+/**
+ * 把 Inspector 已绑定节点上的程序化 Graphics 替换为资源图片。
+ *
+ * 宿主节点来自现有 Scene/Prefab，类本身不查找层级；Graphics 节点会创建一个
+ * 受控图片子节点，避免 Cocos 禁止同节点挂载两个可渲染组件。动态节点、Sprite
+ * 与资源句柄均由所属视图在销毁时统一释放。
+ */
+export class SpriteSkinBinding {
+    /** 每个节点当前持有的图片资源。 */
+    private readonly _handles = new Map<Node, ResourceHandle<SpriteFrame>>();
+
+    /** 每个节点当前使用的 Sprite。 */
+    private readonly _sprites = new Map<Node, Sprite>();
+
+    /** Graphics 宿主对应的受控图片子节点。 */
+    private readonly _spriteNodes = new Map<Node, Node>();
+
+    /** 节点到最新异步请求编号的映射。 */
+    private readonly _requestIds = new Map<Node, number>();
+
+    /** 全局递增请求编号，保证旧加载结果不会覆盖新皮肤。 */
+    private _nextRequestId = 1;
+
+    /** 把 Graphics 所在节点切换为指定图片资源。 */
+    public apply(
+        graphics: Graphics,
+        resourcePath: string,
+        options: SpriteSkinOptions = {},
+    ): Promise<Sprite | null> {
+        return this.applyNode(graphics.node, graphics, resourcePath, options);
+    }
+
+    /** 把显式绑定的现有节点切换为指定图片资源。 */
+    public async applyNode(
+        node: Node,
+        graphics: Graphics | null,
+        resourcePath: string,
+        options: SpriteSkinOptions = {},
+    ): Promise<Sprite | null> {
+        const requestId = this._nextRequestId++;
+        this._requestIds.set(node, requestId);
+        if (graphics) {
+            graphics.clear();
+            graphics.enabled = false;
+        }
+
+        const handle = await ResManager.acquire(resourcePath, SpriteFrame);
+        if (
+            this._requestIds.get(node) !== requestId ||
+            !isValid(node, true)
+        ) {
+            handle.release();
+            return null;
+        }
+
+        const transform = node.getComponent(UITransform);
+        if (!transform) {
+            handle.release();
+            throw new Error(`图片皮肤节点缺少 UITransform：${node.name}`);
+        }
+        if (options.anchor) {
+            transform.setAnchorPoint(options.anchor[0], options.anchor[1]);
+        }
+
+        const spriteNode = graphics
+            ? this.getOrCreateSpriteNode(node, transform)
+            : node;
+        const spriteTransform = spriteNode.getComponent(UITransform);
+        if (!spriteTransform) {
+            handle.release();
+            throw new Error(`图片皮肤显示节点缺少 UITransform：${spriteNode.name}`);
+        }
+        if (options.anchor) {
+            spriteTransform.setAnchorPoint(options.anchor[0], options.anchor[1]);
+        }
+        const sprite =
+            spriteNode.getComponent(Sprite) ?? spriteNode.addComponent(Sprite);
+        const frame = handle.asset;
+        frame.packable = false;
+        if (options.fitVisibleWidth) {
+            const visibleSize = view.getVisibleSize();
+            const sourceSize = frame.originalSize;
+            if (sourceSize.width <= 0 || sourceSize.height <= 0) {
+                handle.release();
+                throw new Error(`长屏图片尺寸无效：${resourcePath}`);
+            }
+            spriteTransform.setContentSize(
+                visibleSize.width,
+                (visibleSize.width * sourceSize.height) / sourceSize.width,
+            );
+        } else {
+            spriteTransform.setContentSize(transform.contentSize);
+        }
+        if (options.sliced) {
+            const insets = options.insets;
+            if (!insets) {
+                handle.release();
+                throw new Error(`九宫图片未提供边界：${resourcePath}`);
+            }
+            frame.insetLeft = insets.left;
+            frame.insetRight = insets.right;
+            frame.insetTop = insets.top;
+            frame.insetBottom = insets.bottom;
+            sprite.type = Sprite.Type.SLICED;
+        } else {
+            sprite.type = Sprite.Type.SIMPLE;
+        }
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.color = options.color ?? Color.WHITE;
+        sprite.spriteFrame = frame;
+        sprite.enabled = true;
+
+        const previousHandle = this._handles.get(node);
+        this._handles.set(node, handle);
+        this._sprites.set(node, sprite);
+        previousHandle?.release();
+        return sprite;
+    }
+
+    /** 为已有 Graphics 的宿主创建或复用独立图片显示节点。 */
+    private getOrCreateSpriteNode(
+        hostNode: Node,
+        hostTransform: UITransform,
+    ): Node {
+        const existing = this._spriteNodes.get(hostNode);
+        if (existing && isValid(existing, true)) {
+            return existing;
+        }
+        const spriteNode = new Node(`${hostNode.name}__ImageSkin`);
+        spriteNode.layer = hostNode.layer;
+        spriteNode.setPosition(0, 0, 0);
+        hostNode.addChild(spriteNode);
+        spriteNode.setSiblingIndex(0);
+        const spriteTransform = spriteNode.addComponent(UITransform);
+        spriteTransform.setContentSize(hostTransform.contentSize);
+        spriteTransform.setAnchorPoint(
+            hostTransform.anchorPoint.x,
+            hostTransform.anchorPoint.y,
+        );
+        this._spriteNodes.set(hostNode, spriteNode);
+        return spriteNode;
+    }
+
+    /** 隐藏已经绑定的 Graphics 与图片表现。 */
+    public hide(graphics: Graphics): void {
+        graphics.clear();
+        graphics.enabled = false;
+        const sprite = this._sprites.get(graphics.node);
+        if (sprite) {
+            sprite.enabled = false;
+        }
+    }
+
+    /** 返回节点当前使用的 Sprite。 */
+    public getSprite(node: Node): Sprite | null {
+        return this._sprites.get(node) ?? null;
+    }
+
+    /** 使所有旧请求失效并归还图片资源所有权。 */
+    public release(): void {
+        this._requestIds.clear();
+        this._nextRequestId += 1;
+        for (const [node, sprite] of this._sprites) {
+            if (isValid(node, true) && isValid(sprite, true)) {
+                sprite.spriteFrame = null;
+            }
+        }
+        for (const handle of this._handles.values()) {
+            handle.release();
+        }
+        this._handles.clear();
+        this._sprites.clear();
+        for (const spriteNode of this._spriteNodes.values()) {
+            if (isValid(spriteNode, true)) {
+                spriteNode.destroy();
+            }
+        }
+        this._spriteNodes.clear();
+    }
+}
 
 /**
  * UI 面板基类。

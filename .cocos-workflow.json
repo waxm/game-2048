@@ -114,6 +114,12 @@
       "verify:game",
       "validate:cocos",
       "workflow:verify"
+    ],
+    "game2048-generated-ui": [
+      "typecheck",
+      "verify:game",
+      "validate:cocos",
+      "workflow:verify"
     ]
   }
 }

@@ -3,6 +3,7 @@
   "uuid": "28cce20f-7260-47d3-bd51-fbc0b70f3cd0",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "generate:ui-kit": "node tools/cocos-modules/game2048-generated-ui/generate-ui-kit.mjs --theme 2048 --background tools/cocos-modules/game2048-generated-ui/design/background-master.png --out assets/resources/textures/common/generated-ui",
     "verify:core": "node tools/verify-core-managers.mjs",
     "verify:game2048": "node tools/cocos-modules/game2048-demo/test-game2048-world.mjs && node tools/cocos-modules/lobby-profile-settings/test-lobby-profile-settings.mjs",
     "validate:cocos": "node tools/validate-cocos-assets.mjs",
@@ -26,6 +27,7 @@
     "version": "3.8.4"
   },
   "devDependencies": {
+    "sharp": "^0.35.3",
     "typescript": "5.6.3"
   }
 }

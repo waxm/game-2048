@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "theme": "2048",
+  "title": "2048 竞技场",
+  "designResolution": {
+    "width": 640,
+    "height": 1136
+  },
+  "backgroundResolution": {
+    "width": 800,
+    "height": 1920,
+    "fit": "visible-width",
+    "safeFrame": {
+      "width": 640,
+      "height": 1136
+    }
+  },
+  "nineSliceRule": "装饰仅位于边缘与角部；运行时按 insets 设置 SpriteFrame 后使用 Sprite.Type.SLICED。",
+  "assets": [
+    {
+      "file": "background.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "panel_large.png",
+      "spriteType": "sliced",
+      "insets": [
+        38,
+        38,
+        38,
+        38
+      ]
+    },
+    {
+      "file": "panel_small.png",
+      "spriteType": "sliced",
+      "insets": [
+        30,
+        30,
+        30,
+        30
+      ]
+    },
+    {
+      "file": "button_primary.png",
+      "spriteType": "sliced",
+      "insets": [
+        42,
+        42,
+        28,
+        28
+      ]
+    },
+    {
+      "file": "button_secondary.png",
+      "spriteType": "sliced",
+      "insets": [
+        40,
+        40,
+        26,
+        26
+      ]
+    },
+    {
+      "file": "button_danger.png",
+      "spriteType": "sliced",
+      "insets": [
+        40,
+        40,
+        26,
+        26
+      ]
+    },
+    {
+      "file": "item_rounded.png",
+      "spriteType": "sliced",
+      "insets": [
+        30,
+        30,
+        30,
+        30
+      ]
+    },
+    {
+      "file": "item_square.png",
+      "spriteType": "sliced",
+      "insets": [
+        20,
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "file": "input_field.png",
+      "spriteType": "sliced",
+      "insets": [
+        24,
+        24,
+        20,
+        20
+      ]
+    },
+    {
+      "file": "progress_track.png",
+      "spriteType": "sliced",
+      "insets": [
+        18,
+        18,
+        12,
+        12
+      ]
+    },
+    {
+      "file": "progress_fill.png",
+      "spriteType": "sliced",
+      "insets": [
+        18,
+        18,
+        12,
+        12
+      ]
+    },
+    {
+      "file": "toggle_on.png",
+      "spriteType": "sliced",
+      "insets": [
+        32,
+        32,
+        28,
+        28
+      ]
+    },
+    {
+      "file": "toggle_off.png",
+      "spriteType": "sliced",
+      "insets": [
+        32,
+        32,
+        28,
+        28
+      ]
+    },
+    {
+      "file": "icon_button.png",
+      "spriteType": "sliced",
+      "insets": [
+        30,
+        30,
+        30,
+        30
+      ]
+    },
+    {
+      "file": "avatar_frame.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "avatar_frame_selected.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "overlay.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "tile_blank.png",
+      "spriteType": "sliced",
+      "insets": [
+        22,
+        22,
+        22,
+        22
+      ]
+    },
+    {
+      "file": "lobby_composite.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "boot_composite.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "game_over_composite.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "settings_off_off.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "settings_on_off.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "settings_off_on.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "settings_on_on.png",
+      "spriteType": "simple",
+      "insets": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

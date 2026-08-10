@@ -1,14 +1,16 @@
 import {
     _decorator,
     Button,
-    Color,
     EditBox,
     Graphics,
     Label,
     Node,
 } from "cc";
 import { PoolManager } from "../../core/pool/PoolManager";
-import { UIBase } from "../../core/ui/UIBase";
+import {
+    SpriteSkinBinding,
+    UIBase,
+} from "../../core/ui/UIBase";
 import { UIManager } from "../../core/ui/UIManager";
 import { Logger } from "../../core/utils/Logger";
 import {
@@ -37,6 +39,10 @@ const { ccclass, property } = _decorator;
 /** 2048 玩家名称与头像选择弹窗。 */
 @ccclass("Game2048ProfilePanel")
 export class Game2048ProfilePanel extends UIBase {
+    /** 2048 通用图片资源根路径。 */
+    private static readonly UI_TEXTURE_ROOT =
+        "textures/common/generated-ui";
+
     /** 全屏半透明输入遮罩。 */
     @property(Graphics)
     public overlayGraphics: Graphics | null = null;
@@ -98,6 +104,9 @@ export class Game2048ProfilePanel extends UIBase {
     /** 当前面板代次，用于丢弃关闭后的对象池异步结果。 */
     private _openGeneration = 0;
 
+    /** 当前资料弹窗持有的图片皮肤与资源句柄。 */
+    private readonly _skin = new SpriteSkinBinding();
+
     /** Cocos 生命周期：校验绑定、绘制固定外观并注册按钮。 */
     protected onLoad(): void {
         this.assertRequiredBindings({
@@ -116,7 +125,7 @@ export class Game2048ProfilePanel extends UIBase {
             feedbackLabel: this.feedbackLabel,
         });
         this.nameEditBox!.maxLength = GAME2048_PROFILE_NAME_MAX_LENGTH;
-        this.drawStaticView();
+        void this.applyGeneratedSkin();
         this.bindEvents();
     }
 
@@ -138,81 +147,38 @@ export class Game2048ProfilePanel extends UIBase {
         super.onClose();
     }
 
-    /** 绘制遮罩、资料底板和操作按钮。 */
-    private drawStaticView(): void {
-        this.drawRoundedRect(
-            this.overlayGraphics!,
-            -320,
-            -568,
-            640,
-            1136,
-            0,
-            new Color(2, 8, 23, 210),
-        );
-        this.drawRoundedRect(
-            this.panelGraphics!,
-            -270,
-            -455,
-            540,
-            910,
-            32,
-            new Color(11, 25, 49, 255),
-        );
-        this.panelGraphics!.lineWidth = 2;
-        this.panelGraphics!.strokeColor = new Color(42, 157, 191, 180);
-        this.panelGraphics!.roundRect(-270, -455, 540, 910, 32);
-        this.panelGraphics!.stroke();
-        this.panelGraphics!.fillColor = new Color(18, 41, 72, 255);
-        this.panelGraphics!.roundRect(-222, 210, 444, 140, 22);
-        this.panelGraphics!.fill();
-        this.panelGraphics!.lineWidth = 1;
-        this.panelGraphics!.strokeColor = new Color(42, 157, 191, 70);
-        this.panelGraphics!.moveTo(-170, -390);
-        this.panelGraphics!.lineTo(170, -390);
-        this.panelGraphics!.stroke();
-        this.drawRoundedRect(
-            this.closeButtonGraphics!,
-            -28,
-            -28,
-            56,
-            56,
-            28,
-            new Color(32, 57, 91, 255),
-        );
-        this.drawRoundedRect(
-            this.nameInputGraphics!,
-            -150,
-            -32,
-            300,
-            64,
-            12,
-            new Color(25, 48, 80, 255),
-        );
-        this.drawRoundedRect(
-            this.saveNameGraphics!,
-            -64,
-            -32,
-            128,
-            64,
-            14,
-            new Color(42, 157, 191, 255),
-        );
+    /** 节点销毁时归还资料弹窗图片资源。 */
+    protected onDestroy(): void {
+        this._skin.release();
+        super.onDestroy();
     }
 
-    /** 使用指定 Graphics 绘制单色圆角矩形。 */
-    private drawRoundedRect(
-        graphics: Graphics,
-        x: number,
-        y: number,
-        width: number,
-        height: number,
-        radius: number,
-        color: Color,
-    ): void {
-        graphics.clear();
-        graphics.fillColor = color;
-        graphics.roundRect(x, y, width, height, radius);
-        graphics.fill();
+    /** 应用资料弹窗的遮罩、九宫面板、输入框和按钮图片。 */
+    private async applyGeneratedSkin(): Promise<void> {
+        const root = Game2048ProfilePanel.UI_TEXTURE_ROOT;
+        try {
+            await Promise.all([
+                this._skin.apply(this.overlayGraphics!, `${root}/overlay/spriteFrame`),
+                this._skin.apply(this.panelGraphics!, `${root}/panel_large/spriteFrame`, {
+                    sliced: true,
+                    insets: { left: 38, right: 38, top: 38, bottom: 38 },
+                }),
+                this._skin.apply(this.closeButtonGraphics!, `${root}/icon_button/spriteFrame`, {
+                    sliced: true,
+                    insets: { left: 30, right: 30, top: 30, bottom: 30 },
+                }),
+                this._skin.apply(this.nameInputGraphics!, `${root}/input_field/spriteFrame`, {
+                    sliced: true,
+                    insets: { left: 24, right: 24, top: 20, bottom: 20 },
+                }),
+                this._skin.apply(this.saveNameGraphics!, `${root}/button_primary/spriteFrame`, {
+                    sliced: true,
+                    insets: { left: 42, right: 42, top: 28, bottom: 28 },
+                }),
+            ]);
+        } catch (error) {
+            Logger.error("2048 资料弹窗图片皮肤加载失败。", error);
+        }
     }
 
     /** 刷新当前头像和名称输入框。 */

@@ -1,5 +1,9 @@
 import { _decorator, Button, Color, Graphics, Label } from "cc";
-import { UIBase } from "../../core/ui/UIBase";
+import {
+    SpriteSkinBinding,
+    UIBase,
+} from "../../core/ui/UIBase";
+import { Logger } from "../../core/utils/Logger";
 import { UIManager } from "../../core/ui/UIManager";
 import { GAME2048_HOME_UI_NAME } from "../../game/game2048/Game2048HomeKey";
 import { Game2048SettingsManager } from "../../game/game2048/Game2048SettingsManager";
@@ -9,6 +13,10 @@ const { ccclass, property } = _decorator;
 /** 2048 冷色设置面板，负责声音和震动开关的展示与操作。 */
 @ccclass("Game2048SettingsPanel")
 export class Game2048SettingsPanel extends UIBase {
+    /** 2048 通用图片资源根路径。 */
+    private static readonly UI_TEXTURE_ROOT =
+        "textures/common/generated-ui";
+
     /** 绘制半透明遮罩、底部卡片、分隔线和开关背景的画布。 */
     @property(Graphics)
     public panelGraphics: Graphics | null = null;
@@ -40,6 +48,9 @@ export class Game2048SettingsPanel extends UIBase {
     /** 是否已经绑定按钮监听。 */
     private _eventsBound = false;
 
+    /** 当前设置弹窗持有的图片皮肤与资源句柄。 */
+    private readonly _skin = new SpriteSkinBinding();
+
     /** Cocos 生命周期：校验 Prefab 显式绑定并注册按钮事件。 */
     protected onLoad(): void {
         this.assertRequiredBindings({
@@ -68,6 +79,7 @@ export class Game2048SettingsPanel extends UIBase {
     /** 组件销毁时兜底移除节点事件。 */
     protected onDestroy(): void {
         this.unbindEvents();
+        this._skin.release();
         super.onDestroy();
     }
 
@@ -163,63 +175,27 @@ export class Game2048SettingsPanel extends UIBase {
         this.vibrationStateLabel!.color = settings.vibrationEnabled
             ? new Color(112, 218, 228, 255)
             : new Color(143, 158, 184, 255);
-        this.drawPanel(settings.soundEnabled, settings.vibrationEnabled);
+        void this.applyGeneratedSkin(
+            settings.soundEnabled,
+            settings.vibrationEnabled,
+        );
     }
 
-    /** 绘制冷色底部弹层，开关颜色直接对应持久化状态。 */
-    private drawPanel(soundEnabled: boolean, vibrationEnabled: boolean): void {
-        const graphics = this.panelGraphics!;
-        graphics.clear();
-
-        graphics.fillColor = new Color(2, 8, 23, 190);
-        graphics.rect(-320, -568, 640, 1136);
-        graphics.fill();
-
-        graphics.fillColor = new Color(11, 25, 49, 255);
-        graphics.roundRect(-300, -548, 600, 520, 36);
-        graphics.fill();
-        graphics.lineWidth = 2;
-        graphics.strokeColor = new Color(42, 157, 191, 180);
-        graphics.roundRect(-300, -548, 600, 520, 36);
-        graphics.stroke();
-
-        graphics.fillColor = new Color(22, 43, 76, 255);
-        graphics.roundRect(-244, -244, 488, 104, 24);
-        graphics.fill();
-        graphics.roundRect(-244, -370, 488, 104, 24);
-        graphics.fill();
-
-        graphics.lineWidth = 1;
-        graphics.strokeColor = new Color(42, 157, 191, 80);
-        graphics.moveTo(-180, -426);
-        graphics.lineTo(180, -426);
-        graphics.stroke();
-
-        graphics.fillColor = new Color(32, 57, 91, 255);
-        graphics.roundRect(180, -98, 72, 48, 24);
-        graphics.fill();
-
-        this.drawToggle(graphics, 176, -192, soundEnabled);
-        this.drawToggle(graphics, 176, -318, vibrationEnabled);
-    }
-
-    /** 绘制单个开关胶囊和状态滑块。 */
-    private drawToggle(
-        graphics: Graphics,
-        x: number,
-        y: number,
-        enabled: boolean,
-    ): void {
-        graphics.fillColor = enabled
-            ? new Color(42, 157, 191, 255)
-            : new Color(49, 67, 95, 255);
-        graphics.roundRect(x - 48, y - 24, 96, 48, 24);
-        graphics.fill();
-
-        graphics.fillColor = enabled
-            ? new Color(228, 244, 255, 255)
-            : new Color(143, 158, 184, 255);
-        graphics.circle(enabled ? x + 23 : x - 23, y, 17);
-        graphics.fill();
+    /** 按两个开关状态切换预合成的底部设置面板图片。 */
+    private async applyGeneratedSkin(
+        soundEnabled: boolean,
+        vibrationEnabled: boolean,
+    ): Promise<void> {
+        const sound = soundEnabled ? "on" : "off";
+        const vibration = vibrationEnabled ? "on" : "off";
+        try {
+            await this._skin.apply(
+                this.panelGraphics!,
+                `${Game2048SettingsPanel.UI_TEXTURE_ROOT}/settings_${sound}_${vibration}/spriteFrame`,
+                { fitVisibleWidth: true },
+            );
+        } catch (error) {
+            Logger.error("2048 设置面板图片切换失败。", error);
+        }
     }
 }
